@@ -36,6 +36,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing::{error, info, warn};
 
+#[cfg(feature = "feishu")]
+const FEISHU_IDENTITY_RESOLUTION_TIMEOUT_SECS: u64 = 15;
+
 /// Wait for SIGINT (ctrl_c) or, on unix, SIGTERM.
 async fn shutdown_signal() {
     #[cfg(unix)]
@@ -899,6 +902,11 @@ async fn main() -> anyhow::Result<()> {
     // Spawn embedded webhook server when gateway adapters are compiled in (unified mode).
     // In unified mode, platform webhooks hit this axum server directly → Dispatcher.submit(),
     // bypassing the WebSocket hop of the two-process model.
+    #[cfg(feature = "feishu")]
+    let mut unified_feishu_shutdown: Option<tokio::sync::watch::Sender<bool>> = None;
+    #[cfg(feature = "feishu")]
+    let mut unified_feishu_handle: Option<tokio::task::JoinHandle<()>> = None;
+
     #[cfg(any(
         feature = "telegram",
         feature = "line",
@@ -1063,12 +1071,12 @@ async fn main() -> anyhow::Result<()> {
             if gw_state.feishu.is_some() {
                 // NOTE (#1356 L1 audit): unlike the standalone gateway (which
                 // mounts this route only in Webhook connection mode), the
-                // unified binary mounts it unconditionally — and never spawns
-                // the Websocket client. Deployments relying on Feishu-side
-                // webhook delivery while FEISHU_CONNECTION_MODE is unset
-                // (default: websocket) work only because of this mount, so
-                // gating it is a behavior change that needs its own
-                // deprecation path — tracked on #1356, not changed here.
+                // unified binary mounts it unconditionally. In WebSocket mode,
+                // the client is also started below. Deployments relying on
+                // Feishu-side webhook delivery while FEISHU_CONNECTION_MODE is
+                // unset (default: websocket) work because this route remains
+                // mounted, so gating it is a behavior change that needs its
+                // own deprecation path — tracked on #1356, not changed here.
                 let path = gw_state
                     .feishu
                     .as_ref()
@@ -1079,6 +1087,47 @@ async fn main() -> anyhow::Result<()> {
                     &path,
                     axum::routing::post(openab_gateway::adapters::feishu::webhook),
                 );
+            }
+
+            // Feishu bot identity + WebSocket long-connection (unified mode).
+            // This mirrors the standalone gateway: the default websocket mode
+            // otherwise mounts only the webhook route and receives no events.
+            #[cfg(feature = "feishu")]
+            if let Some(ref f) = gw_state.feishu {
+                use openab_gateway::adapters::feishu;
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(FEISHU_IDENTITY_RESOLUTION_TIMEOUT_SECS),
+                    f.resolve_bot_identity(),
+                )
+                .await
+                {
+                    Ok(()) => {}
+                    Err(_) => warn!(
+                        "unified: feishu bot identity resolution timed out; continuing without bot identity"
+                    ),
+                }
+                if f.config.streaming_mode != feishu::StreamingMode::Post {
+                    let idle_ms = f.config.card_idle_finalize_ms;
+                    tokio::spawn(feishu::run_idle_reaper(
+                        f.stream_sessions.clone(),
+                        f.token_cache.clone(),
+                        f.client.clone(),
+                        f.config.api_base(),
+                        idle_ms,
+                    ));
+                    info!(idle_ms, "unified: feishu card-streaming idle reaper started");
+                }
+                if f.config.connection_mode == feishu::ConnectionMode::Websocket {
+                    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+                    match feishu::start_websocket(f, event_tx.clone(), shutdown_rx).await {
+                        Ok(handle) => {
+                            info!("unified: feishu websocket task spawned");
+                            unified_feishu_shutdown = Some(shutdown_tx);
+                            unified_feishu_handle = Some(handle);
+                        }
+                        Err(e) => error!(err = %e, "unified: feishu websocket startup failed"),
+                    }
+                }
             }
 
             #[cfg(feature = "wecom")]
@@ -1405,6 +1454,15 @@ async fn main() -> anyhow::Result<()> {
         let _ = std::fs::remove_file(ctl::socket_path());
     }
     let _ = shutdown_tx.send(true);
+    #[cfg(feature = "feishu")]
+    {
+        if let Some(feishu_shutdown_tx) = unified_feishu_shutdown.take() {
+            let _ = feishu_shutdown_tx.send(true);
+        }
+        if let Some(feishu_handle) = unified_feishu_handle.take() {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), feishu_handle).await;
+        }
+    }
     if let Some(handle) = slack_handle {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), handle).await;
     }
