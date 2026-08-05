@@ -5,6 +5,7 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
+openab-acp = { path = "../openab-acp" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -72,4 +73,4 @@ filestore = ["dep:aws-sdk-s3", "dep:aws-config"]
 agentcore = ["dep:aws-config", "dep:aws-sigv4", "dep:aws-credential-types", "dep:urlencoding", "dep:hex", "dep:http", "dep:rustls", "dep:tokio-rustls", "dep:webpki-roots"]
 # Core-side wiring for MCP-over-ACP browser control (enabled by the root `acp`): the browser tool
 # definitions and the agent's facade MCP config. Core hosts no MCP server of its own any more.
-acp-mcp = ["dep:rmcp", "dep:tokio-util"]
+acp-mcp = ["openab-acp/acp-mcp", "dep:rmcp", "dep:tokio-util"]

@@ -2523,6 +2523,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "openab-acp"
+version = "0.8.5"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "openab-core"
 version = "0.8.5"
 dependencies = [
@@ -2546,6 +2561,7 @@ dependencies = [
  "http 1.4.2",
  "image",
  "libc",
+ "openab-acp",
  "pulldown-cmark",
  "rand 0.8.6",
  "regex",

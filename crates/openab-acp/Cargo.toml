@@ -1,0 +1,25 @@
+[package]
+name = "openab-acp"
+version = "0.8.5"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", optional = true }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[features]
+default = []
+acp-mcp = ["dep:tokio-util"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }

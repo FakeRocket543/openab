@@ -1,4 +1,4 @@
-use crate::acp::protocol::{
+use crate::protocol::{
     parse_config_options, parse_usage_report, ConfigOption, JsonRpcMessage, JsonRpcRequest,
     JsonRpcResponse, UsageReport,
 };
@@ -319,7 +319,7 @@ pub(crate) async fn run_reader_loop<R, W>(
             id: None,
             method: None,
             result: None,
-            error: Some(crate::acp::protocol::JsonRpcError {
+            error: Some(crate::protocol::JsonRpcError {
                 code: -1,
                 message: "connection closed".into(),
                 data: None,
