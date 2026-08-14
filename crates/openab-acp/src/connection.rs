@@ -1,4 +1,4 @@
-use crate::acp::protocol::{
+use crate::protocol::{
     parse_config_options, parse_usage_report, ConfigOption, JsonRpcMessage, JsonRpcRequest,
     JsonRpcResponse, UsageReport,
 };
@@ -90,38 +90,6 @@ use tokio::time::Instant;
 pub enum ContentBlock {
     Text { text: String },
     Image { media_type: String, data: String },
-}
-
-/// Merge consecutive Text blocks into a single Text block (joined with `\n\n`).
-/// Non-text blocks act as boundaries — text before and after an image remain separate.
-/// This is required because kiro v3 forwards the prompt array directly to Bedrock,
-/// which rejects multiple text content blocks in a single message.
-fn merge_text_blocks(blocks: &[ContentBlock]) -> Vec<ContentBlock> {
-    let mut merged: Vec<ContentBlock> = Vec::with_capacity(blocks.len());
-    let mut text_buf = String::new();
-
-    for block in blocks {
-        match block {
-            ContentBlock::Text { text } => {
-                if !text_buf.is_empty() {
-                    text_buf.push_str("\n\n");
-                }
-                text_buf.push_str(text);
-            }
-            other => {
-                if !text_buf.is_empty() {
-                    merged.push(ContentBlock::Text {
-                        text: std::mem::take(&mut text_buf),
-                    });
-                }
-                merged.push(other.clone());
-            }
-        }
-    }
-    if !text_buf.is_empty() {
-        merged.push(ContentBlock::Text { text: text_buf });
-    }
-    merged
 }
 
 impl ContentBlock {
@@ -257,21 +225,6 @@ fn build_agent_env(
     (result, inherited)
 }
 
-/// True only for errors that unambiguously indicate the agent's auth token is
-/// invalid or expired — cases where dropping the connection to force a fresh
-/// `_kiro/auth/getAccessToken` (with a refreshed token) is the correct
-/// recovery. Deliberately narrow: generic "Access denied" / "not authorized"
-/// messages are surfaced normally to the user instead of silently churning
-/// reconnects on unrelated permission/tool errors.
-fn is_auth_token_failure(err: &crate::acp::protocol::JsonRpcError) -> bool {
-    let m = err.message.to_ascii_lowercase();
-    m.contains("bearer token")
-        || m.contains("expired token")
-        || m.contains("token is expired")
-        || m.contains("security token included in the request is expired")
-        || m.contains("invalididentitytoken")
-}
-
 /// Reader loop body: reads JSON-RPC messages from `reader`, auto-replies
 /// `session/request_permission` via `writer`, resolves pending responses,
 /// and forwards notifications + stale id-bearing messages to the active
@@ -305,58 +258,6 @@ pub(crate) async fn run_reader_loop<R, W>(
         debug!(line = line.trim(), "acp_recv");
 
         // Auto-reply session/request_permission
-
-        // Auto-reply _kiro/auth/getAccessToken (v3 engine auth callback).
-        // On success reply with the refreshed token; on failure send a proper
-        // JSON-RPC *error* (never an empty success) so the engine knows auth
-        // is unavailable instead of retrying against a blank token that would
-        // 403 and trigger a reconnect storm.
-        if msg.method.as_deref() == Some("_kiro/auth/getAccessToken") {
-            if let Some(id) = msg.id {
-                let reply = match tokio::task::spawn_blocking(
-                    crate::acp::kiro_auth::build_auth_response,
-                )
-                .await
-                {
-                    Ok(Some(result)) => {
-                        info!("_kiro/auth/getAccessToken: providing token");
-                        serde_json::json!({"jsonrpc":"2.0","id":id,"result":result})
-                    }
-                    Ok(None) => {
-                        tracing::warn!("_kiro/auth/getAccessToken: no token available");
-                        serde_json::json!({
-                            "jsonrpc":"2.0","id":id,
-                            "error":{"code":-32001,"message":"kiro auth unavailable: no valid token (run `kiro-cli login`)"}
-                        })
-                    }
-                    Err(e) => {
-                        tracing::error!("_kiro/auth/getAccessToken: failed to build response: {e}");
-                        serde_json::json!({
-                            "jsonrpc":"2.0","id":id,
-                            "error":{"code":-32603,"message":format!("kiro auth task failed: {e}")}
-                        })
-                    }
-                };
-                if let Ok(data) = serde_json::to_string(&reply) {
-                    let mut w = writer.lock().await;
-                    let _ = w.write_all(format!("{data}\n").as_bytes()).await;
-                    let _ = w.flush().await;
-                }
-            }
-            continue;
-        }
-
-        // Detect *token-level* auth failures in responses and drop the
-        // connection so the pool recreates it and the next prompt triggers a
-        // fresh `_kiro/auth/getAccessToken` with a refreshed token. Narrow by
-        // design (see `is_auth_token_failure`): generic "Access denied" errors
-        // surface to the user normally rather than silently churning reconnects.
-        if let Some(err) = &msg.error {
-            if is_auth_token_failure(err) {
-                tracing::warn!("auth-token failure detected — dropping connection for re-auth");
-                break;
-            }
-        }
         if msg.method.as_deref() == Some("session/request_permission") {
             if let Some(id) = msg.id {
                 let title = msg
@@ -418,7 +319,7 @@ pub(crate) async fn run_reader_loop<R, W>(
             id: None,
             method: None,
             result: None,
-            error: Some(crate::acp::protocol::JsonRpcError {
+            error: Some(crate::protocol::JsonRpcError {
                 code: -1,
                 message: "connection closed".into(),
                 data: None,
@@ -674,19 +575,6 @@ impl AcpConnection {
             load_session = self.supports_load_session,
             "initialized"
         );
-
-        // ACP protocol: notify agent that initialization is complete.
-        // Required by kiro-cli v3 engine before it accepts session requests.
-        let notif = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized"
-        });
-        self.send_raw(&serde_json::to_string(&notif)?).await?;
-        tracing::debug!("notifications/initialized sent");
-
-        // Small delay to allow v3 agent to process the notification
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
         Ok(())
     }
 
@@ -837,11 +725,8 @@ impl AcpConnection {
 
         let id = self.next_id();
 
-        // Convert content blocks to JSON.
-        // Merge consecutive text blocks into one to satisfy v3 engine's stricter
-        // Bedrock validation (rejects multiple text blocks in prompt array).
-        let merged = merge_text_blocks(&content_blocks);
-        let prompt_json: Vec<Value> = merged.iter().map(|b| b.to_json()).collect();
+        // Convert content blocks to JSON
+        let prompt_json: Vec<Value> = content_blocks.iter().map(|b| b.to_json()).collect();
 
         let req = JsonRpcRequest::new(
             id,
@@ -1227,29 +1112,5 @@ mod reader_loop_tests {
         assert!(activity.in_flight());
         activity.set_in_flight(false);
         assert!(!activity.in_flight());
-    }
-    /// H2 regression guard: only unambiguous token-invalidity errors trigger a
-    /// reconnect; generic "Access denied" must NOT (it would cause spurious
-    /// disconnects on normal permission/tool errors).
-    #[test]
-    fn auth_token_failure_matcher_is_narrow() {
-        use crate::acp::protocol::JsonRpcError;
-        let hit = |msg: &str| {
-            is_auth_token_failure(&JsonRpcError {
-                code: -1,
-                message: msg.to_string(),
-                data: None,
-            })
-        };
-        // Genuine token failures → reconnect.
-        assert!(hit("Invalid bearer token"));
-        assert!(hit("The security token included in the request is expired"));
-        assert!(hit("InvalidIdentityToken: ..."));
-        assert!(hit("the token is expired"));
-        // Ambiguous / app-level errors → must NOT reconnect.
-        assert!(!hit("Access denied"));
-        assert!(!hit("Access denied to /etc/shadow"));
-        assert!(!hit("User is not authorized to perform this tool"));
-        assert!(!hit("permission denied"));
     }
 }

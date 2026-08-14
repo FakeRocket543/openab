@@ -133,7 +133,8 @@ fn default_mcp_listen() -> String {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AgentCoreConfig {    /// AgentCore Runtime ARN (required)
+pub struct AgentCoreConfig {
+    /// AgentCore Runtime ARN (required)
     pub runtime_arn: String,
     /// ACP agent command to run in the PTY shell (default: kiro-cli acp --trust-all-tools)
     #[serde(default = "default_agentcore_shell_command")]
