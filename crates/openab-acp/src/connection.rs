@@ -451,7 +451,7 @@ impl AcpConnection {
                                     .filter(|c| !c.is_control() || *c == '\t')
                                     .collect();
                                 if !sanitized.is_empty() {
-                                    tracing::warn!(agent = %cmd_name, "{sanitized}");
+                                    tracing::info!(agent = %cmd_name, "{sanitized}");
                                 }
                             }
                         }
