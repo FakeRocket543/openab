@@ -1738,6 +1738,11 @@ pub struct PoolConfig {
     /// with its connection mutex held is force-evicted from the pool.
     #[serde(default = "default_hung_grace_secs")]
     pub hung_grace_secs: u64,
+    /// When session/load fails because the agent thinks the session is already
+    /// open, attempt to remove stale `.lock` files whose owning PID is gone and
+    /// retry once. Default: false to preserve existing behavior.
+    #[serde(default = "default_session_lock_cleanup")]
+    pub session_lock_cleanup: bool,
     /// Config options to set automatically after session creation.
     /// Keys are config option IDs (e.g. "mode", "model"), values are the
     /// desired values (e.g. "bypass", "swe-1-6").
@@ -1925,6 +1930,9 @@ pub(crate) fn default_liveness_check_secs() -> u64 {
 pub(crate) fn default_hung_grace_secs() -> u64 {
     120
 }
+fn default_session_lock_cleanup() -> bool {
+    false
+}
 fn default_true() -> bool {
     true
 }
@@ -1975,6 +1983,7 @@ impl Default for PoolConfig {
             prompt_hard_timeout_secs: default_prompt_hard_timeout_secs(),
             liveness_check_secs: default_liveness_check_secs(),
             hung_grace_secs: default_hung_grace_secs(),
+            session_lock_cleanup: default_session_lock_cleanup(),
             default_config_options: HashMap::new(),
         }
     }

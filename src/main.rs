@@ -556,7 +556,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let pool_inner = acp::SessionPool::new(
+    let mut pool_inner = acp::SessionPool::new(
         cfg.agent,
         cfg.pool.max_sessions,
         cfg.pool
@@ -564,6 +564,7 @@ async fn main() -> anyhow::Result<()> {
             .saturating_add(cfg.pool.hung_grace_secs),
         cfg.pool.default_config_options,
     );
+    pool_inner.set_session_lock_cleanup(cfg.pool.session_lock_cleanup);
     // Facade session wiring: only when the facade is actually serving. With no `[mcp]` there is
     // no registrar and no facade url, and the pool simply starts sessions without browser
     // capabilities — there is no longer a proxy path for it to fall back to.

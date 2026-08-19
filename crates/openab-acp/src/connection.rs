@@ -5,13 +5,14 @@ use crate::protocol::{
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 /// Pick the most permissive selectable permission option from ACP options.
 fn pick_best_option(options: &[Value]) -> Option<String> {
@@ -187,6 +188,7 @@ pub struct AcpConnection {
     pub last_active: Instant,
     pub activity: Arc<SessionActivity>,
     pub session_reset: bool,
+    pub clean_stale_session_locks: bool,
     _reader_handle: JoinHandle<()>,
     _stderr_handle: Option<JoinHandle<()>>,
     /// Revokes this session's facade token when the connection is dropped, on any evict path.
@@ -491,6 +493,7 @@ impl AcpConnection {
             last_active: Instant::now(),
             activity,
             session_reset: false,
+            clean_stale_session_locks: false,
             _reader_handle: reader_handle,
             _stderr_handle: stderr_handle,
             #[cfg(feature = "acp-mcp")]
@@ -502,6 +505,69 @@ impl AcpConnection {
     #[cfg(feature = "acp-mcp")]
     pub fn set_facade_token_guard(&mut self, guard: Option<tokio_util::sync::DropGuard>) {
         self.facade_token_guard = guard;
+    }
+
+    /// Enable stale session-lock cleanup for this connection.
+    pub fn set_clean_stale_session_locks(&mut self, v: bool) {
+        self.clean_stale_session_locks = v;
+    }
+
+    /// Best-effort path to a devin session lock file for the given session id.
+    fn devin_session_lock_path(session_id: &str) -> Option<PathBuf> {
+        let home = std::env::var("HOME").ok()?;
+        Some(
+            PathBuf::from(home)
+                .join(".local/share/devin/cli/session_locks")
+                .join(format!("{session_id}.lock")),
+        )
+    }
+
+    /// If the devin session lock for `session_id` is held by a process that no
+    /// longer exists, remove it. Returns true when a stale lock was removed.
+    #[cfg(unix)]
+    fn maybe_remove_stale_session_lock(session_id: &str) -> bool {
+        let path = match Self::devin_session_lock_path(session_id) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        let pid: i32 = match content
+            .split_whitespace()
+            .next()
+            .and_then(|s| s.parse().ok())
+        {
+            Some(p) if p > 0 => p,
+            _ => return false,
+        };
+
+        // SAFETY: pid is positive, signal 0 does not deliver any signal.
+        let ret = unsafe { libc::kill(pid, 0) };
+        if ret == 0 {
+            return false;
+        }
+
+        // Only remove the lock if we are certain the process is gone (ESRCH).
+        let err = std::io::Error::last_os_error();
+        if err.raw_os_error() != Some(libc::ESRCH) {
+            return false;
+        }
+
+        if let Err(e) = std::fs::remove_file(&path) {
+            warn!(session_id, error = %e, "failed to remove stale devin session lock");
+            return false;
+        }
+
+        true
+    }
+
+    #[cfg(not(unix))]
+    fn maybe_remove_stale_session_lock(_session_id: &str) -> bool {
+        false
     }
 
     fn next_id(&self) -> u64 {
@@ -793,23 +859,44 @@ impl AcpConnection {
 
     /// Resume a previous session by ID. Returns Ok(()) if the agent accepted
     /// the load, or an error if it failed (caller should fall back to session/new).
+    ///
+    /// When `clean_stale_session_locks` is enabled and the agent reports the
+    /// session as already open, we attempt to remove any stale `.lock` file
+    /// whose owning PID no longer exists, then retry `session/load` once.
     pub async fn session_load(&mut self, session_id: &str, cwd: &str) -> Result<()> {
-        let resp = self
-            .send_request(
-                "session/load",
-                Some(json!({"sessionId": session_id, "cwd": cwd, "mcpServers": []})),
-            )
-            .await?;
-        // Accept any non-error response as success
-        if resp.error.is_some() {
-            return Err(anyhow!("session/load rejected"));
-        }
+        let resp = self.try_session_load(session_id, cwd).await?;
         info!(session_id, "session loaded");
         self.acp_session_id = Some(session_id.to_string());
         if let Some(result) = resp.result.as_ref() {
             self.config_options = parse_config_options(result);
         }
         Ok(())
+    }
+
+    async fn try_session_load(&self, session_id: &str, cwd: &str) -> Result<JsonRpcMessage> {
+        let request = json!({"sessionId": session_id, "cwd": cwd, "mcpServers": []});
+
+        match self
+            .send_request("session/load", Some(request.clone()))
+            .await
+        {
+            Ok(resp) => Ok(resp),
+            Err(e) => {
+                if self.clean_stale_session_locks {
+                    let err_lower = e.to_string().to_lowercase();
+                    if err_lower.contains("already open in another process")
+                        && Self::maybe_remove_stale_session_lock(session_id)
+                    {
+                        info!(
+                            session_id,
+                            "stale devin session lock removed, retrying session/load"
+                        );
+                        return self.send_request("session/load", Some(request)).await;
+                    }
+                }
+                Err(e)
+            }
+        }
     }
 
     /// Kill the entire process group: SIGTERM → SIGKILL.

@@ -58,6 +58,7 @@ pub struct SessionPool {
     /// Force-evict sessions stuck in-flight longer than this threshold
     /// (`prompt_hard_timeout_secs + hung_grace_secs`, wired in main.rs).
     hung_threshold_secs: u64,
+    session_lock_cleanup: bool,
     mapping_path: PathBuf,
     meta_path: PathBuf,
     default_config_options: HashMap<String, String>,
@@ -308,6 +309,7 @@ impl SessionPool {
             config,
             max_sessions,
             hung_threshold_secs,
+            session_lock_cleanup: false,
             mapping_path,
             meta_path,
             default_config_options,
@@ -337,6 +339,12 @@ impl SessionPool {
         self.session_registrar = registrar;
         self.facade_url = facade_url;
         self
+    }
+
+    /// Enable stale agent session-lock cleanup. Off by default for backward
+    /// compatibility; set from `[pool].session_lock_cleanup` in config.
+    pub fn set_session_lock_cleanup(&mut self, v: bool) {
+        self.session_lock_cleanup = v;
     }
 
     fn load_mapping(path: &Path) -> HashMap<String, String> {
@@ -555,6 +563,7 @@ impl SessionPool {
         .await?;
 
         new_conn.initialize().await?;
+        new_conn.set_clean_stale_session_locks(self.session_lock_cleanup);
 
         let mut resumed = false;
         let mut load_failed: Option<&str> = None;
