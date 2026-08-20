@@ -1531,7 +1531,7 @@ impl EventHandler for Handler {
                     .await;
             }
             Interaction::Command(cmd) if cmd.data.name == "agents" => {
-                self.handle_config_command(&ctx, &cmd, "agent", "agent")
+                self.handle_config_command(&ctx, &cmd, "mode", "agent mode")
                     .await;
             }
             Interaction::Command(cmd) if cmd.data.name == "cancel" => {
@@ -2607,7 +2607,7 @@ impl Handler {
         };
 
         // Only allow known config categories.
-        if !matches!(category, "model" | "agent") {
+        if !matches!(category, "model" | "agent" | "mode") {
             return;
         }
 
