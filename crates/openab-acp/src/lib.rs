@@ -1,4 +1,6 @@
 pub mod connection;
+#[cfg(unix)]
+pub mod kiro_auth;
 pub mod protocol;
 
 pub use connection::{AcpConnection, ContentBlock, SessionActivity};

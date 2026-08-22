@@ -92,6 +92,38 @@ pub enum ContentBlock {
     Image { media_type: String, data: String },
 }
 
+/// Merge consecutive Text blocks into a single Text block (joined with `\n\n`).
+/// Non-text blocks act as boundaries — text before and after an image remain separate.
+/// This is required because kiro v3 forwards the prompt array directly to Bedrock,
+/// which rejects multiple text content blocks in a single message.
+fn merge_text_blocks(blocks: &[ContentBlock]) -> Vec<ContentBlock> {
+    let mut merged: Vec<ContentBlock> = Vec::with_capacity(blocks.len());
+    let mut text_buf = String::new();
+
+    for block in blocks {
+        match block {
+            ContentBlock::Text { text } => {
+                if !text_buf.is_empty() {
+                    text_buf.push_str("\n\n");
+                }
+                text_buf.push_str(text);
+            }
+            other => {
+                if !text_buf.is_empty() {
+                    merged.push(ContentBlock::Text {
+                        text: std::mem::take(&mut text_buf),
+                    });
+                }
+                merged.push(other.clone());
+            }
+        }
+    }
+    if !text_buf.is_empty() {
+        merged.push(ContentBlock::Text { text: text_buf });
+    }
+    merged
+}
+
 impl ContentBlock {
     pub fn to_json(&self) -> Value {
         match self {
@@ -225,6 +257,35 @@ fn build_agent_env(
     (result, inherited)
 }
 
+/// True only for errors that unambiguously indicate the agent's auth token is
+/// invalid or expired — cases where dropping the connection to force a fresh
+/// `_kiro/auth/getAccessToken` (with a refreshed token) is the correct
+/// recovery. Deliberately narrow: generic "Access denied" / "not authorized"
+/// messages are surfaced normally to the user instead of silently churning
+/// reconnects on unrelated permission/tool errors.
+fn is_auth_token_failure(err: &crate::protocol::JsonRpcError) -> bool {
+    let m = err.message.to_ascii_lowercase();
+    m.contains("bearer token")
+        || m.contains("expired token")
+        || m.contains("token is expired")
+        || m.contains("security token included in the request is expired")
+        || m.contains("invalididentitytoken")
+}
+
+/// Resolve `_kiro/auth/getAccessToken` from kiro-cli's local auth store.
+/// Unix-only: kiro-cli has no documented Windows data directory; on other
+/// platforms the engine gets a proper JSON-RPC error instead of a hang.
+#[cfg(unix)]
+fn build_kiro_auth_response() -> Option<serde_json::Value> {
+    crate::kiro_auth::build_auth_response()
+}
+
+#[cfg(not(unix))]
+fn build_kiro_auth_response() -> Option<serde_json::Value> {
+    tracing::warn!("_kiro/auth/getAccessToken: kiro auth is not supported on this platform");
+    None
+}
+
 /// Reader loop body: reads JSON-RPC messages from `reader`, auto-replies
 /// `session/request_permission` via `writer`, resolves pending responses,
 /// and forwards notifications + stale id-bearing messages to the active
@@ -257,7 +318,53 @@ pub(crate) async fn run_reader_loop<R, W>(
         };
         debug!(line = line.trim(), "acp_recv");
 
-        // Auto-reply session/request_permission
+        // Auto-reply _kiro/auth/getAccessToken (v3 engine auth callback).
+        // On success reply with the refreshed token; on failure send a proper
+        // JSON-RPC *error* (never an empty success) so the engine knows auth
+        // is unavailable instead of retrying against a blank token that would
+        // 403 and trigger a reconnect storm.
+        if msg.method.as_deref() == Some("_kiro/auth/getAccessToken") {
+            if let Some(id) = msg.id {
+                let reply = match tokio::task::spawn_blocking(build_kiro_auth_response).await {
+                    Ok(Some(result)) => {
+                        info!("_kiro/auth/getAccessToken: providing token");
+                        serde_json::json!({"jsonrpc":"2.0","id":id,"result":result})
+                    }
+                    Ok(None) => {
+                        tracing::warn!("_kiro/auth/getAccessToken: no token available");
+                        serde_json::json!({
+                            "jsonrpc":"2.0","id":id,
+                            "error":{"code":-32001,"message":"kiro auth unavailable: no valid token (run `kiro-cli login`)"}
+                        })
+                    }
+                    Err(e) => {
+                        tracing::error!("_kiro/auth/getAccessToken: failed to build response: {e}");
+                        serde_json::json!({
+                            "jsonrpc":"2.0","id":id,
+                            "error":{"code":-32603,"message":format!("kiro auth task failed: {e}")}
+                        })
+                    }
+                };
+                if let Ok(data) = serde_json::to_string(&reply) {
+                    let mut w = writer.lock().await;
+                    let _ = w.write_all(format!("{data}\n").as_bytes()).await;
+                    let _ = w.flush().await;
+                }
+            }
+            continue;
+        }
+
+        // Detect *token-level* auth failures in responses and drop the
+        // connection so the pool recreates it and the next prompt triggers a
+        // fresh `_kiro/auth/getAccessToken` with a refreshed token. Narrow by
+        // design (see `is_auth_token_failure`): generic "Access denied" errors
+        // surface to the user normally rather than silently churning reconnects.
+        if let Some(err) = &msg.error {
+            if is_auth_token_failure(err) {
+                tracing::warn!("auth-token failure detected — dropping connection for re-auth");
+                break;
+            }
+        }
         if msg.method.as_deref() == Some("session/request_permission") {
             if let Some(id) = msg.id {
                 let title = msg
@@ -527,6 +634,7 @@ impl AcpConnection {
     async fn send_request(&self, method: &str, params: Option<Value>) -> Result<JsonRpcMessage> {
         let id = self.next_id();
         let req = JsonRpcRequest::new(id, method, params);
+
         let data = serde_json::to_string(&req)?;
 
         let (tx, rx) = oneshot::channel();
@@ -575,6 +683,22 @@ impl AcpConnection {
             load_session = self.supports_load_session,
             "initialized"
         );
+
+        // Notify the agent that initialization is complete. Not part of the
+        // ACP spec as openab implements it, but the kiro-cli v3 engine
+        // requires `notifications/initialized` before it accepts session
+        // requests; other agents ignore unknown notifications.
+        let notif = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        });
+        self.send_raw(&serde_json::to_string(&notif)?).await?;
+        tracing::debug!("notifications/initialized sent");
+
+        // Small delay to let the v3 agent process the notification before the
+        // first session/new races it.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
         Ok(())
     }
 
@@ -725,8 +849,12 @@ impl AcpConnection {
 
         let id = self.next_id();
 
-        // Convert content blocks to JSON
-        let prompt_json: Vec<Value> = content_blocks.iter().map(|b| b.to_json()).collect();
+        // Convert content blocks to JSON.
+        // Merge consecutive text blocks into one to satisfy the kiro v3
+        // engine's stricter Bedrock validation (it forwards the prompt array
+        // as-is and Bedrock rejects multiple text blocks in one message).
+        let merged = merge_text_blocks(&content_blocks);
+        let prompt_json: Vec<Value> = merged.iter().map(|b| b.to_json()).collect();
 
         let req = JsonRpcRequest::new(
             id,
@@ -1112,5 +1240,163 @@ mod reader_loop_tests {
         assert!(activity.in_flight());
         activity.set_in_flight(false);
         assert!(!activity.in_flight());
+    }
+
+    /// H2 regression guard: only unambiguous token-invalidity errors trigger a
+    /// reconnect; generic "Access denied" must NOT (it would cause spurious
+    /// disconnects on normal permission/tool errors).
+    #[test]
+    fn auth_token_failure_matcher_is_narrow() {
+        let hit = |msg: &str| {
+            is_auth_token_failure(&crate::protocol::JsonRpcError {
+                code: -1,
+                message: msg.to_string(),
+                data: None,
+            })
+        };
+        // Genuine token failures → reconnect.
+        assert!(hit("Invalid bearer token"));
+        assert!(hit("The security token included in the request is expired"));
+        assert!(hit("InvalidIdentityToken: ..."));
+        assert!(hit("the token is expired"));
+        // Ambiguous / app-level errors → must NOT reconnect.
+        assert!(!hit("Access denied"));
+        assert!(!hit("Access denied to /etc/shadow"));
+        assert!(!hit("User is not authorized to perform this tool"));
+        assert!(!hit("permission denied"));
+    }
+
+    /// Kiro v3 Bedrock contract: consecutive text blocks coalesce into one;
+    /// a non-text block is a hard boundary; empty input stays empty.
+    #[test]
+    fn merge_text_blocks_coalesces_and_respects_boundaries() {
+        let text = |s: &str| ContentBlock::Text { text: s.into() };
+        let img = || ContentBlock::Image {
+            media_type: "image/png".into(),
+            data: "AAAA".into(),
+        };
+
+        // [t1, t2] → single merged text joined with \n\n
+        let merged = merge_text_blocks(&[text("a"), text("b")]);
+        assert_eq!(merged.len(), 1);
+        assert!(matches!(&merged[0], ContentBlock::Text { text } if text == "a\n\nb"));
+
+        // [t1, img, t2] → text, image, text (boundary preserved)
+        let merged = merge_text_blocks(&[text("a"), img(), text("b")]);
+        assert_eq!(merged.len(), 3);
+        assert!(matches!(&merged[0], ContentBlock::Text { text } if text == "a"));
+        assert!(matches!(&merged[2], ContentBlock::Text { text } if text == "b"));
+
+        // Empty and single-block inputs pass through.
+        assert!(merge_text_blocks(&[]).is_empty());
+        let merged = merge_text_blocks(&[img()]);
+        assert_eq!(merged.len(), 1);
+    }
+
+    /// `_kiro/auth/getAccessToken` must never answer with an empty success:
+    /// with no usable token the engine gets a JSON-RPC error so it fails fast
+    /// instead of retrying against a blank token (403 reconnect storm).
+    #[tokio::test]
+    async fn kiro_auth_request_replies_with_jsonrpc_error_when_no_token() {
+        let (mut agent_stdout_writer, agent_stdout_reader) = duplex(8 * 1024);
+        let (mut agent_stdin_reader, agent_stdin_writer) = duplex(8 * 1024);
+
+        let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<JsonRpcMessage>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let notify_tx: Arc<Mutex<Option<mpsc::UnboundedSender<JsonRpcMessage>>>> =
+            Arc::new(Mutex::new(None));
+
+        let writer = Arc::new(Mutex::new(agent_stdin_writer));
+        let handle = tokio::spawn(run_reader_loop(
+            agent_stdout_reader,
+            writer,
+            pending,
+            notify_tx,
+        ));
+
+        // Point kiro auth at a directory with no data.sqlite3 so the token
+        // store cannot be opened (READ_WRITE without CREATE fails).
+        let old_dir = std::env::var("KIRO_CLI_DATA_DIR").ok();
+        std::env::set_var("KIRO_CLI_DATA_DIR", "/nonexistent-kiro-test");
+
+        let req = b"{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"_kiro/auth/getAccessToken\"}\n";
+        agent_stdout_writer.write_all(req).await.unwrap();
+        agent_stdout_writer.flush().await.unwrap();
+
+        let mut line = String::new();
+        let mut reader = tokio::io::BufReader::new(&mut agent_stdin_reader);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            reader.read_line(&mut line),
+        )
+        .await
+        .expect("auth reply should arrive")
+        .expect("stdin reader should stay open");
+        let reply: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(reply["id"], 11);
+        assert!(
+            reply.get("error").is_some(),
+            "must reply with JSON-RPC error, got: {reply}"
+        );
+        assert!(reply.get("result").is_none());
+
+        if let Some(v) = old_dir {
+            std::env::set_var("KIRO_CLI_DATA_DIR", v);
+        } else {
+            std::env::remove_var("KIRO_CLI_DATA_DIR");
+        }
+        drop(agent_stdout_writer);
+        handle.await.unwrap();
+    }
+
+    /// Auth-token failure in a response must terminate the reader loop (so
+    /// the pool recreates the connection and re-auth runs), resolving pending
+    /// requests with "connection closed" and shutting down the subscriber.
+    #[tokio::test]
+    async fn auth_token_failure_response_terminates_reader_loop() {
+        let (mut agent_stdout_writer, agent_stdout_reader) = duplex(8 * 1024);
+        let (_agent_stdin_reader, agent_stdin_writer) = duplex(8 * 1024);
+
+        let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<JsonRpcMessage>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let notify_tx: Arc<Mutex<Option<mpsc::UnboundedSender<JsonRpcMessage>>>> =
+            Arc::new(Mutex::new(None));
+
+        let (sub_tx, mut sub_rx) = mpsc::unbounded_channel();
+        *notify_tx.lock().await = Some(sub_tx);
+
+        let (tx5, rx5) = oneshot::channel();
+        pending.lock().await.insert(5, tx5);
+
+        let writer = Arc::new(Mutex::new(agent_stdin_writer));
+        let handle = tokio::spawn(run_reader_loop(
+            agent_stdout_reader,
+            writer,
+            pending.clone(),
+            notify_tx,
+        ));
+
+        let err = b"{\"jsonrpc\":\"2.0\",\"id\":5,\"error\":{\"code\":-1,\"message\":\"The security token included in the request is expired\"}}\n";
+        agent_stdout_writer.write_all(err).await.unwrap();
+        agent_stdout_writer.flush().await.unwrap();
+
+        let resolved = tokio::time::timeout(std::time::Duration::from_secs(2), rx5)
+            .await
+            .expect("pending should be resolved on loop exit")
+            .expect("oneshot should not be cancelled");
+        assert_eq!(resolved.id, None);
+        let msg_err = resolved.error.expect("resolved with error");
+        assert_eq!(msg_err.message, "connection closed");
+
+        // Loop exited → subscriber channel closed → recv() yields None.
+        let closed = tokio::time::timeout(std::time::Duration::from_secs(2), sub_rx.recv())
+            .await
+            .expect("subscriber should drain within timeout");
+        assert!(
+            closed.is_none(),
+            "subscriber must be closed after loop exit"
+        );
+        assert!(pending.lock().await.is_empty());
+        handle.await.unwrap();
     }
 }
