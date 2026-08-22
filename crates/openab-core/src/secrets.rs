@@ -373,7 +373,9 @@ mod tests {
             exec: ExecSecretsConfig { timeout_seconds: 5 },
             refs: HashMap::new(),
         };
-        let result = resolve_exec("test", "exec:///bin/false", &cfg).await;
+        // Use a cross-platform command that exits non-zero without relying on
+        // /bin/false, which does not exist on macOS.
+        let result = resolve_exec("test", "exec:///bin/sh -c exit 1", &cfg).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("exited with"));
     }
