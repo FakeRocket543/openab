@@ -2563,7 +2563,10 @@ version = "0.8.5"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "libc",
+ "reqwest 0.12.28",
+ "rusqlite",
  "serde",
  "serde_json",
  "tokio",
@@ -2603,7 +2606,6 @@ dependencies = [
  "reqwest 0.12.28",
  "rmcp",
  "rpassword",
- "rusqlite",
  "rustls 0.22.4",
  "serde",
  "serde_json",

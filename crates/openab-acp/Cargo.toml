@@ -17,6 +17,12 @@ uuid = { version = "1", features = ["v4"] }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# kiro-cli v3 auth (see src/kiro_auth.rs): local sqlite token store + AWS SSO
+# OIDC refresh. Both are blocking; called via spawn_blocking from connection.rs.
+chrono = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 [features]
 default = []
 acp-mcp = ["dep:tokio-util"]
