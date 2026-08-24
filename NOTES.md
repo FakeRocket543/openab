@@ -85,3 +85,7 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 3. **k3d image 的長期維護**
    - 本次是手動把編好的 `openab` binary patch 進既有 `openab-kiro:trixie` image。
    - 未來若要正式重建，應改以 `openab-fork/Dockerfile.unified` 編出 source image 後，再跑 `OAB-K3D/image/build.sh`。
+## 2026-08-24 09:56 UTC 狀態更新
+
+- `feat/janitor-hook-coordination` 已併入 OpenAB `main` @ `e813a8e4`：Janitor↔hooks 互鎖實作、M4-Review 修復、文件補充已推上 `forgejo`。
+- `fix/shell-v1.1-r1` 已併入 cuta `main` @ `e37e2d8`：R1 W1/N1/N2/N3 修復完成，審查報告存於 `docs/reviews/m5-shell-v1.1-r2-review.md`。
