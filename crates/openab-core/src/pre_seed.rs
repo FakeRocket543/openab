@@ -1,6 +1,6 @@
 use crate::config::{parse_s3_uri, OnFailure, PreSeedConfig};
 use sha2::{Digest, Sha256};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{error, info, warn};
 
@@ -14,7 +14,12 @@ const DEFAULT_MAX_EXTRACTED_BYTES: u64 = 500 * 1024 * 1024;
 const DEFAULT_MAX_FILE_COUNT: usize = 10_000;
 
 /// Run the pre_seed phase: download zip archives from S3 and extract them in order.
-pub async fn run(cfg: &PreSeedConfig) -> anyhow::Result<()> {
+///
+/// `skip_paths` are absolute destination paths that must NOT be restored —
+/// used for the janitor coordination lock, which lives inside the backup
+/// tree but must never be renamed over while held (inode swap would break
+/// the flock interlock mid-extraction).
+pub async fn run(cfg: &PreSeedConfig, skip_paths: &[PathBuf]) -> anyhow::Result<()> {
     if cfg.sources.is_empty() {
         return Ok(());
     }
@@ -58,7 +63,8 @@ pub async fn run(cfg: &PreSeedConfig) -> anyhow::Result<()> {
 
         let deadline = Instant::now() + std::time::Duration::from_secs(cfg.timeout_seconds);
 
-        let result = download_and_extract(&s3, source, &target, cfg.max_bytes, deadline).await;
+        let result =
+            download_and_extract(&s3, source, &target, cfg.max_bytes, deadline, skip_paths).await;
 
         let outcome = match result {
             Ok(()) => {
@@ -91,6 +97,7 @@ async fn download_and_extract(
     target: &Path,
     max_bytes: u64,
     deadline: Instant,
+    skip_paths: &[PathBuf],
 ) -> anyhow::Result<()> {
     let (bucket, key) = parse_s3_uri(uri)?;
 
@@ -157,8 +164,9 @@ async fn download_and_extract(
 
     // Extract and move in a blocking task with cooperative deadline checking.
     let target = target.to_path_buf();
+    let skip_paths = skip_paths.to_vec();
     // Bytes is Arc-backed, Clone is zero-copy (ref-count bump only)
-    tokio::task::spawn_blocking(move || extract_and_apply(&bytes, &target, deadline))
+    tokio::task::spawn_blocking(move || extract_and_apply(&bytes, &target, deadline, &skip_paths))
         .await
         .map_err(|e| anyhow::anyhow!("hooks.pre_seed: extract task panicked: {e}"))??;
 
@@ -168,7 +176,12 @@ async fn download_and_extract(
 /// Extract archive to a temp directory with budget enforcement, then move into target.
 /// Supports zip and gzipped tarball formats (detected via magic bytes).
 /// Checks deadline cooperatively before each file operation.
-fn extract_and_apply(data: &[u8], target: &Path, deadline: Instant) -> anyhow::Result<()> {
+fn extract_and_apply(
+    data: &[u8],
+    target: &Path,
+    deadline: Instant,
+    skip_paths: &[PathBuf],
+) -> anyhow::Result<()> {
     std::fs::create_dir_all(target)?;
     let temp_dir = tempfile::tempdir_in(target)?;
 
@@ -183,8 +196,25 @@ fn extract_and_apply(data: &[u8], target: &Path, deadline: Instant) -> anyhow::R
         anyhow::bail!("hooks.pre_seed: timed out before applying to target");
     }
 
+    strip_skipped(temp_dir.path(), target, skip_paths);
     move_recursive(temp_dir.path(), target, deadline)?;
     Ok(())
+}
+
+/// Remove entries from the extracted temp dir whose final destination is in
+/// `skip_paths` (absolute paths under `target`). This prevents the per-file
+/// rename in `move_recursive` from swapping the inode of a lock file that a
+/// hook is currently holding an flock on.
+fn strip_skipped(temp_dir: &Path, target: &Path, skip_paths: &[PathBuf]) {
+    for skip in skip_paths {
+        let Ok(rel) = skip.strip_prefix(target) else {
+            continue; // outside this layer's target — not our concern
+        };
+        let staged = temp_dir.join(rel);
+        if staged.exists() && std::fs::remove_file(&staged).is_ok() {
+            info!(path = %skip.display(), "hooks.pre_seed: skipping restore of lock file");
+        }
+    }
 }
 
 /// Extract a zip archive with cooperative deadline checks and extraction budget.
@@ -542,7 +572,7 @@ mod tests {
         writer.write_all(b"added").unwrap();
         let cursor = writer.finish().unwrap();
 
-        extract_and_apply(cursor.get_ref(), target.path(), deadline).unwrap();
+        extract_and_apply(cursor.get_ref(), target.path(), deadline, &[]).unwrap();
 
         assert_eq!(
             std::fs::read_to_string(target.path().join("existing.txt")).unwrap(),
@@ -551,6 +581,51 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(target.path().join("new.txt")).unwrap(),
             "added"
+        );
+    }
+
+    /// Regression (janitor coordination): a layer containing the coordination
+    /// lock file must NOT restore it — the per-file rename would swap the
+    /// inode out from under a hook holding an flock on it, silently breaking
+    /// mutual exclusion mid-extraction. See coord_lock module docs.
+    #[test]
+    fn extract_and_apply_skips_coordination_lock_path() {
+        use std::io::Write;
+        let target = tempfile::tempdir().unwrap();
+        let deadline = Instant::now() + std::time::Duration::from_secs(60);
+        let lock_path = target.path().join(".local/share/devin/cli/.janitor.lock");
+        std::fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
+        std::fs::write(&lock_path, "held-by-hook").unwrap();
+
+        let buf = Vec::new();
+        let cursor = std::io::Cursor::new(buf);
+        let mut writer = zip::ZipWriter::new(cursor);
+        let options = zip::write::SimpleFileOptions::default();
+        writer
+            .start_file(".local/share/devin/cli/.janitor.lock", options)
+            .unwrap();
+        writer.write_all(b"from-archive").unwrap();
+        writer.start_file("hello.txt", options).unwrap();
+        writer.write_all(b"world").unwrap();
+        let cursor = writer.finish().unwrap();
+
+        extract_and_apply(
+            cursor.get_ref(),
+            target.path(),
+            deadline,
+            std::slice::from_ref(&lock_path),
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&lock_path).unwrap(),
+            "held-by-hook",
+            "lock file inode must survive extraction"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.path().join("hello.txt")).unwrap(),
+            "world",
+            "non-skipped files still restored"
         );
     }
 
@@ -570,7 +645,7 @@ mod tests {
         let cursor = writer.finish().unwrap();
 
         // extract_and_apply should fail due to expired deadline
-        let result = extract_and_apply(cursor.get_ref(), dir.path(), deadline);
+        let result = extract_and_apply(cursor.get_ref(), dir.path(), deadline, &[]);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("timed out"));
     }
@@ -590,7 +665,7 @@ mod tests {
         writer.write_all(b"overwritten").unwrap();
         let cursor = writer.finish().unwrap();
 
-        extract_and_apply(cursor.get_ref(), target.path(), deadline).unwrap();
+        extract_and_apply(cursor.get_ref(), target.path(), deadline, &[]).unwrap();
 
         assert_eq!(
             std::fs::read_to_string(target.path().join("hello.txt")).unwrap(),
@@ -601,7 +676,7 @@ mod tests {
     #[tokio::test]
     async fn run_empty_sources() {
         let cfg = PreSeedConfig::default();
-        assert!(run(&cfg).await.is_ok());
+        assert!(run(&cfg, &[]).await.is_ok());
     }
 
     #[tokio::test]
@@ -610,7 +685,7 @@ mod tests {
             sources: vec!["s3://b/k.zip".into(); 6],
             ..Default::default()
         };
-        assert!(run(&cfg).await.is_err());
+        assert!(run(&cfg, &[]).await.is_err());
     }
 
     #[test]
@@ -751,7 +826,7 @@ mod tests {
         let tarball_bytes = enc.finish().unwrap();
 
         // Magic bytes detection — no URI needed
-        extract_and_apply(&tarball_bytes, target.path(), deadline).unwrap();
+        extract_and_apply(&tarball_bytes, target.path(), deadline, &[]).unwrap();
         assert_eq!(
             std::fs::read_to_string(target.path().join("hello.txt")).unwrap(),
             "world"
@@ -865,7 +940,7 @@ mod tests {
         let cursor = writer.finish().unwrap();
 
         let deadline = Instant::now() + std::time::Duration::from_secs(60);
-        let result = extract_and_apply(cursor.get_ref(), &target, deadline);
+        let result = extract_and_apply(cursor.get_ref(), &target, deadline, &[]);
 
         // Restore permissions before asserting (for cleanup)
         std::fs::set_permissions(&restricted, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -896,7 +971,7 @@ mod tests {
         let cursor = writer.finish().unwrap();
 
         let deadline = Instant::now() + std::time::Duration::from_secs(60);
-        extract_and_apply(cursor.get_ref(), &target, deadline).unwrap();
+        extract_and_apply(cursor.get_ref(), &target, deadline, &[]).unwrap();
 
         assert_eq!(
             std::fs::read_to_string(target.join("test.txt")).unwrap(),

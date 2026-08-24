@@ -327,6 +327,16 @@ pub struct HooksConfig {
     pub pre_seed: Option<PreSeedConfig>,
     pub pre_boot: Option<HookConfig>,
     pub pre_shutdown: Option<HookConfig>,
+    /// Coordination lock file shared with the sessions.db janitor sidecar.
+    /// `pre_seed` and `pre_shutdown` hold an exclusive flock on it while
+    /// restoring/backing up `$HOME`. Default:
+    /// `$HOME/.local/share/devin/cli/.janitor.lock` (janitor.py's default).
+    #[serde(default)]
+    pub coordination_lock: Option<String>,
+    /// Seconds a hook waits for the janitor to finish its current pass
+    /// before failing. Default: 180.
+    #[serde(default)]
+    pub coordination_lock_timeout_seconds: Option<u64>,
 }
 
 impl HooksConfig {
@@ -3360,6 +3370,7 @@ allowed_users = ["uuid-a", "uuid-b"]
             }),
             pre_boot: None,
             pre_shutdown: None,
+            ..Default::default()
         };
         assert!(!h2.any_configured());
     }
@@ -3381,6 +3392,7 @@ allowed_users = ["uuid-a", "uuid-b"]
             pre_seed: None,
             pre_boot: Some(sample_hook()),
             pre_shutdown: None,
+            ..Default::default()
         };
         assert!(h.any_configured());
     }
@@ -3398,6 +3410,7 @@ allowed_users = ["uuid-a", "uuid-b"]
             pre_seed: None,
             pre_boot: Some(sample_hook()),
             pre_shutdown: None,
+            ..Default::default()
         };
         assert!(h.ensure_platform_supported().is_ok());
     }

@@ -4,6 +4,7 @@ pub mod acp_mcp;
 pub mod adapter;
 pub mod bot_turns;
 pub mod config;
+pub mod coord_lock;
 pub mod cron;
 pub mod directives;
 pub mod dispatch;

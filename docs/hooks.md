@@ -10,6 +10,45 @@ OpenAB supports lifecycle hooks that run at specific points during the container
 hooks.pre_seed → hooks.pre_boot → (agent running) → hooks.pre_shutdown
 ```
 
+## Janitor Coordination Lock
+
+When a **sessions.db janitor** sidecar runs alongside OpenAB (periodic WAL
+checkpoint / VACUUM / orphan cleanup), lifecycle hooks and the janitor must
+not touch the same files at the same time: a `pre_shutdown` backup tarring a
+DB mid-`VACUUM` captures a torn WAL/DB pair, and `pre_seed` extraction can
+swap files underneath an in-flight janitor pass — the corruption class in
+`docs/db-recovery-2026-08-10.md`.
+
+OpenAB and the janitor coordinate through an **advisory `flock(2)`** on a
+shared lock file:
+
+- `pre_seed` holds the exclusive lock for the whole download+extract phase.
+- `pre_shutdown` holds it for the duration of the backup script. If the lock
+  cannot be taken within `coordination_lock_timeout_seconds`, the hook is
+  **skipped with an error log** — a missing backup is visible, a torn one is not.
+- The janitor holds the same lock for each full pass and skips its pass
+  gracefully while the lock is busy (retry next interval).
+- The lock file is never restored by `pre_seed` — renaming over a held lock
+  file would swap its inode and silently break the interlock mid-extraction.
+
+```toml
+[hooks]
+coordination_lock = "/home/agent/.local/share/devin/cli/.janitor.lock"  # default
+coordination_lock_timeout_seconds = 180                                 # default
+```
+
+Defaults require no configuration: the default path matches `janitor.py`'s
+`JANITOR_COORD_LOCK` default (`<dirname($SESSIONS_DB)>/.janitor.lock` with the
+default `SESSIONS_DB`). If you relocate the DB (`SESSIONS_DB` / `JANITOR_COORD_LOCK`
+on the janitor side), set `coordination_lock` to the same path. Deployments
+without a janitor are unaffected — an uncontended lock is a no-op.
+
+`flock` is kernel-atomic (no check-then-act window) and is released
+automatically when the holding process dies, so a crashed hook cannot wedge
+the janitor.
+
+## Lifecycle Phases
+
 | Phase | When | Purpose | Config | Action Type |
 |-------|------|---------|--------|-------------|
 | `pre_seed` | First — before `pre_boot` | Download & extract S3 archives to seed the environment | `[hooks.pre_seed]` | Built-in S3 download + extract |
