@@ -613,7 +613,7 @@ mod tests {
             cursor.get_ref(),
             target.path(),
             deadline,
-            &[lock_path.clone()],
+            std::slice::from_ref(&lock_path),
         )
         .unwrap();
 

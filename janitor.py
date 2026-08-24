@@ -43,6 +43,7 @@ try:
         raise ValueError
 except ValueError:
     log("WARNING: invalid VACUUM_THRESHOLD_MB, using default 300")
+    VACUUM_THRESHOLD = 300
 try:
     PASS_LOCK_WAIT_S = int(os.environ.get("JANITOR_LOCK_WAIT_S", "60"))
     if PASS_LOCK_WAIT_S < 0:
