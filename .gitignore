@@ -10,3 +10,15 @@ config.toml
 CLAUDE.md
 .claude/
 .claude.local.md
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Backup files
+*.bak
+
+# Janitor runtime logs
+janitor-*.log
+janitor-*.err
