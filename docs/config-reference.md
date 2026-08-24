@@ -438,6 +438,11 @@ default_config_options = { mode = "bypass", model = "swe-1-6" }
 
 Lifecycle hooks that run at specific points during the container lifecycle. See [hooks.md](hooks.md) for full documentation and examples.
 
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `coordination_lock` | string | `$HOME/.local/share/devin/cli/.janitor.lock` | Absolute path to the `flock` file shared with the sessions.db janitor sidecar. `pre_seed` and `pre_shutdown` hold an exclusive lock on it while touching `$HOME`. Must match the janitor side's `JANITOR_COORD_LOCK`. |
+| `coordination_lock_timeout_seconds` | u64 | `180` | Max seconds a hook waits for the janitor to release the lock before giving up. |
+
 ### `[hooks.pre_seed]`
 
 Downloads and extracts archives from S3 before `pre_boot`. Seeds the agent environment with configs, tools, and shared memory without requiring AWS CLI in the image.
