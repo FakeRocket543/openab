@@ -446,11 +446,27 @@ async fn main() -> anyhow::Result<()> {
     // --- Lifecycle hooks: Unix-only. Fail fast on unsupported platforms. ---
     cfg.hooks.ensure_platform_supported()?;
 
+    // Coordination lock shared with the sessions.db janitor sidecar: pre_seed
+    // (restore) and pre_shutdown (backup) hold it exclusively so a janitor
+    // pass can never checkpoint/VACUUM mid-backup or mid-restore
+    // (docs/db-recovery-2026-08-10.md). None when no hooks are configured.
+    let coord_spec = openab_core::coord_lock::CoordLockSpec::resolve(&cfg.hooks);
+
     // --- pre_seed: download & extract S3 zips before pre_boot ---
     #[cfg(feature = "pre-seed")]
-    if let Some(ref pre_seed) = cfg.hooks.pre_seed {
+    if let Some(pre_seed) = &cfg.hooks.pre_seed {
         if !pre_seed.sources.is_empty() {
-            openab_core::pre_seed::run(pre_seed).await?;
+            let _guard = match &coord_spec {
+                Some(spec) => Some(openab_core::coord_lock::acquire(spec).await?),
+                None => None,
+            };
+            // Never restore the lock file itself: renaming over it would swap
+            // the inode out from under the flock we're holding.
+            let skip: Vec<std::path::PathBuf> = coord_spec
+                .as_ref()
+                .map(|s| vec![s.path.clone()])
+                .unwrap_or_default();
+            openab_core::pre_seed::run(pre_seed, &skip).await?;
         }
     }
 
@@ -1796,9 +1812,27 @@ async fn main() -> anyhow::Result<()> {
     }
     let shutdown_pool = pool;
     shutdown_pool.shutdown().await;
-    if let Some(ref hook) = shutdown_hook {
-        if let Err(e) = hooks::run_hook("pre_shutdown", hook).await {
-            error!(error = %e, "pre_shutdown hook failed");
+    if let Some(hook) = &shutdown_hook {
+        // Hold the janitor coordination lock across the backup script: the
+        // janitor sidecar must not checkpoint/VACUUM sessions.db while $HOME
+        // is being tarred. On timeout, skip the hook rather than race —
+        // the missing backup is visible in logs, a torn one is not.
+        let guarded = match &coord_spec {
+            Some(spec) => openab_core::coord_lock::acquire(spec).await,
+            None => Ok(openab_core::coord_lock::CoordLockGuard::noop()),
+        };
+        match guarded {
+            Ok(_guard) => {
+                if let Err(e) = hooks::run_hook("pre_shutdown", hook).await {
+                    error!(error = %e, "pre_shutdown hook failed");
+                }
+            }
+            Err(e) => {
+                error!(
+                    error = %e,
+                    "pre_shutdown hook skipped: janitor coordination lock unavailable"
+                );
+            }
         }
     }
     info!("openab shut down");

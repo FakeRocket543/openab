@@ -43,9 +43,18 @@ try:
         raise ValueError
 except ValueError:
     log("WARNING: invalid VACUUM_THRESHOLD_MB, using default 300")
-    VACUUM_THRESHOLD = 300
+try:
+    PASS_LOCK_WAIT_S = int(os.environ.get("JANITOR_LOCK_WAIT_S", "60"))
+    if PASS_LOCK_WAIT_S < 0:
+        raise ValueError
+except ValueError:
+    log("WARNING: invalid JANITOR_LOCK_WAIT_S, using default 60")
+    PASS_LOCK_WAIT_S = 60
 
-# Coordination lock — agent can optionally flock this before DB writes
+# Coordination lock — shared with lifecycle hooks (docs/hooks.md): pre_seed
+# (restore) / pre_shutdown (backup) hold an exclusive flock on this file so
+# this janitor can never checkpoint/VACUUM mid-backup or mid-restore. The
+# agent can also flock it in shared mode before DB writes.
 COORD_LOCK = os.environ.get("JANITOR_COORD_LOCK", os.path.join(os.path.dirname(DB), ".janitor.lock"))
 
 _raw_oneshot = os.environ.get("JANITOR_ONESHOT", "").strip().lower()
@@ -135,7 +144,26 @@ def check_db_integrity(conn):
 
 
 def cleanup() -> bool:
-    """Run one cleanup pass. Return True on success, False if any step failed."""
+    """Run one cleanup pass. Return True on success, False if any step failed.
+
+    The whole pass holds the coordination lock: lifecycle hooks (pre_seed
+    restore / pre_shutdown backup, see docs/hooks.md) take the same exclusive
+    flock, so they can never capture a torn DB/WAL pair or swap files under
+    an in-flight VACUUM. A busy lock means a hook window is active — skip
+    this pass gracefully (True: not a failure) and retry next interval.
+    """
+    lock_fd = acquire_coord_lock(timeout=PASS_LOCK_WAIT_S)
+    if lock_fd is None:
+        log("coord lock busy (pre_seed/pre_shutdown window?), skipping pass")
+        return True
+    try:
+        return _cleanup_pass()
+    finally:
+        release_coord_lock(lock_fd)
+
+
+def _cleanup_pass() -> bool:
+    """Cleanup work — callers hold the coordination lock."""
     ok = True
     ok &= cleanup_stale_locks()
 
@@ -207,14 +235,10 @@ def cleanup() -> bool:
             log(f"WAL checkpoint failed: {e}")
             return False
 
-    log(f"db={size_mb}MB > {VACUUM_THRESHOLD}MB threshold, attempting VACUUM with coord lock")
+    log(f"db={size_mb}MB > {VACUUM_THRESHOLD}MB threshold, attempting VACUUM")
 
-    # Acquire coordination lock — wait up to 120s for agent to finish current writes
-    lock_fd = acquire_coord_lock(timeout=120)
-    if lock_fd is None:
-        log("VACUUM skipped: could not acquire coord lock within 120s")
-        return False
-
+    # Coordination lock is held for the whole pass (see cleanup()) — the
+    # agent's shared-flock writes are excluded via SQLite busy_timeout.
     try:
         conn = sqlite3.connect(DB, timeout=30, isolation_level=None)
         conn.execute("PRAGMA busy_timeout=30000")
@@ -239,9 +263,6 @@ def cleanup() -> bool:
     except sqlite3.DatabaseError as e:
         log(f"VACUUM failed: {e}")
         return False
-    finally:
-        release_coord_lock(lock_fd)
-
     return ok
 
 
