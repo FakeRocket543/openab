@@ -94,3 +94,9 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 - `m4z/openab-mcp-clippy` 已併入 OpenAB `main` @ `aa7bef7f`：修復 `openab-mcp` `-D warnings` 並解決 macOS `resolve_exec_nonzero_exit`；workspace clippy 全綠。
 - `m4z/openab-mcp-clippy` 分支已刪除。
 - `fix/shell-v1.1-r1` 已併入 cuta `main` @ `e37e2d8`：R1 W1/N1/N2/N3 修復完成，審查報告存於 `docs/reviews/m5-shell-v1.1-r2-review.md`。
+## 2026-08-25 05:30 UTC 狀態更新
+
+- `forgejo/fix/acp-agent-stderr-level` 已併入 OpenAB `main` @ `944d5500`：agent stderr 按自身 severity 轉發。
+- `forgejo/kiro-v3-auth` 已併入 OpenAB `main` @ `944d5500`：re-land kiro-cli v3 auth on openab-acp。
+- `fix-secrets-exec-test` 已刪除（`/bin/sh` 修復已被 `/usr/bin/false` 取代）。
+- `feat/card-style-pack` 已併入 cuta `main` @ `0b70a71`：新增 `press-noir` / `aurora-dusk` 字卡風格與 `scripts/style_sheet.py`。
