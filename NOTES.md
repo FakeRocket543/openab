@@ -109,3 +109,4 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 ## 2026-08-25 07:15 UTC 狀態更新
 
 - `feat/timeline-at-mode` 已併入 cuta `main` @ `b800c4a`：A/T hotkeys＋Jobs detail 時間軸滾輪、播放控制／follow playhead／seekable chips；補 `@tauri-apps/cli` devDependency。pytest 242 passed、npm build ✅、clippy `-D warnings` ✅
+- `feat(formats)` 已併入 cuta `main` @ `1be9942`：輸出格式放寬——直式/橫式 × FHD/4K/social（5 內建 profile＋自訂 WxH@fps），manifest `format` 欄位驅動，無欄位時向後相容 fhd-vertical。pytest 256 passed；eversupp `video-fhd` 專案實跑 voice stage，base.mp4 實測 1920×1080@30。
