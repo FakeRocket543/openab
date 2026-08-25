@@ -584,11 +584,21 @@ impl AcpConnection {
                                     .collect();
                                 if !sanitized.is_empty() {
                                     match agent_stderr_level(&sanitized) {
-                                        Level::ERROR => tracing::error!(agent = %cmd_name, "{sanitized}"),
-                                        Level::WARN => tracing::warn!(agent = %cmd_name, "{sanitized}"),
-                                        Level::INFO => tracing::info!(agent = %cmd_name, "{sanitized}"),
-                                        Level::DEBUG => tracing::debug!(agent = %cmd_name, "{sanitized}"),
-                                        Level::TRACE => tracing::trace!(agent = %cmd_name, "{sanitized}"),
+                                        Level::ERROR => {
+                                            tracing::error!(agent = %cmd_name, "{sanitized}")
+                                        }
+                                        Level::WARN => {
+                                            tracing::warn!(agent = %cmd_name, "{sanitized}")
+                                        }
+                                        Level::INFO => {
+                                            tracing::info!(agent = %cmd_name, "{sanitized}")
+                                        }
+                                        Level::DEBUG => {
+                                            tracing::debug!(agent = %cmd_name, "{sanitized}")
+                                        }
+                                        Level::TRACE => {
+                                            tracing::trace!(agent = %cmd_name, "{sanitized}")
+                                        }
                                     }
                                 }
                             }
@@ -1096,24 +1106,51 @@ impl Drop for AcpConnection {
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_stderr_level, build_agent_env, build_permission_response, pick_best_option, Level};
+    use super::{
+        agent_stderr_level, build_agent_env, build_permission_response, pick_best_option, Level,
+    };
     use serde_json::json;
 
     #[test]
     fn agent_stderr_level_reads_embedded_severity() {
         // Devin emits structured tracing lines: <timestamp>  <LEVEL> <target>: ...
-        assert_eq!(agent_stderr_level("2026-08-14T02:53:19.419549Z  INFO run_acp_server:build_store_with_fetcher: done"), Level::INFO);
-        assert_eq!(agent_stderr_level("2026-08-14T02:09:52.184873Z  WARN windsurf_api_client::remote_config: timed out"), Level::WARN);
-        assert_eq!(agent_stderr_level("2026-08-14T02:09:52.184873Z  ERROR some::target: it broke"), Level::ERROR);
-        assert_eq!(agent_stderr_level("2026-08-14T02:53:19.419549Z  DEBUG plugin_host: close"), Level::DEBUG);
-        assert_eq!(agent_stderr_level("2026-08-14T02:53:19.419549Z  TRACE deep: trace"), Level::TRACE);
+        assert_eq!(
+            agent_stderr_level(
+                "2026-08-14T02:53:19.419549Z  INFO run_acp_server:build_store_with_fetcher: done"
+            ),
+            Level::INFO
+        );
+        assert_eq!(
+            agent_stderr_level(
+                "2026-08-14T02:09:52.184873Z  WARN windsurf_api_client::remote_config: timed out"
+            ),
+            Level::WARN
+        );
+        assert_eq!(
+            agent_stderr_level("2026-08-14T02:09:52.184873Z  ERROR some::target: it broke"),
+            Level::ERROR
+        );
+        assert_eq!(
+            agent_stderr_level("2026-08-14T02:53:19.419549Z  DEBUG plugin_host: close"),
+            Level::DEBUG
+        );
+        assert_eq!(
+            agent_stderr_level("2026-08-14T02:53:19.419549Z  TRACE deep: trace"),
+            Level::TRACE
+        );
     }
 
     #[test]
     fn agent_stderr_level_defaults_unrecognized_to_warn() {
         // A panic backtrace line carries no level token — surface it, never drop.
-        assert_eq!(agent_stderr_level("thread 'main' panicked at 'src/main.rs:42:1'"), Level::WARN);
-        assert_eq!(agent_stderr_level("note: run with `RUST_BACKTRACE=1` to display a backtrace"), Level::WARN);
+        assert_eq!(
+            agent_stderr_level("thread 'main' panicked at 'src/main.rs:42:1'"),
+            Level::WARN
+        );
+        assert_eq!(
+            agent_stderr_level("note: run with `RUST_BACKTRACE=1` to display a backtrace"),
+            Level::WARN
+        );
     }
 
     #[test]
