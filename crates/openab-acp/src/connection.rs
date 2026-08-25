@@ -12,7 +12,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn, Level};
 
 /// Pick the most permissive selectable permission option from ACP options.
 fn pick_best_option(options: &[Value]) -> Option<String> {
@@ -334,6 +334,29 @@ pub(crate) async fn run_reader_loop<R, W>(
     *sub = None;
 }
 
+/// Map an agent stderr line to a log level from the severity token the agent
+/// itself emitted, so forwarded output keeps the agent's real severity instead
+/// of being flattened to WARN.
+///
+/// Agent CLIs (e.g. Devin) write structured tracing output to stderr that
+/// already carries a level, e.g. `2026-08-14T..Z  INFO target: ...`. Respecting
+/// it lets routine INFO/DEBUG init chatter be filtered via `RUST_LOG` while
+/// genuine WARN/ERROR still surfaces. Lines with no recognizable level (e.g. a
+/// panic backtrace) default to WARN so they are not silently dropped.
+fn agent_stderr_level(line: &str) -> Level {
+    for tok in line.split_whitespace().take(4) {
+        match tok {
+            "ERROR" => return Level::ERROR,
+            "WARN" | "WARNING" => return Level::WARN,
+            "INFO" => return Level::INFO,
+            "DEBUG" => return Level::DEBUG,
+            "TRACE" => return Level::TRACE,
+            _ => {}
+        }
+    }
+    Level::WARN
+}
+
 impl AcpConnection {
     pub async fn spawn(
         command: &str,
@@ -453,7 +476,13 @@ impl AcpConnection {
                                     .filter(|c| !c.is_control() || *c == '\t')
                                     .collect();
                                 if !sanitized.is_empty() {
-                                    tracing::info!(agent = %cmd_name, "{sanitized}");
+                                    match agent_stderr_level(&sanitized) {
+                                        Level::ERROR => tracing::error!(agent = %cmd_name, "{sanitized}"),
+                                        Level::WARN => tracing::warn!(agent = %cmd_name, "{sanitized}"),
+                                        Level::INFO => tracing::info!(agent = %cmd_name, "{sanitized}"),
+                                        Level::DEBUG => tracing::debug!(agent = %cmd_name, "{sanitized}"),
+                                        Level::TRACE => tracing::trace!(agent = %cmd_name, "{sanitized}"),
+                                    }
                                 }
                             }
                         }
@@ -939,8 +968,25 @@ impl Drop for AcpConnection {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_agent_env, build_permission_response, pick_best_option};
+    use super::{agent_stderr_level, build_agent_env, build_permission_response, pick_best_option, Level};
     use serde_json::json;
+
+    #[test]
+    fn agent_stderr_level_reads_embedded_severity() {
+        // Devin emits structured tracing lines: <timestamp>  <LEVEL> <target>: ...
+        assert_eq!(agent_stderr_level("2026-08-14T02:53:19.419549Z  INFO run_acp_server:build_store_with_fetcher: done"), Level::INFO);
+        assert_eq!(agent_stderr_level("2026-08-14T02:09:52.184873Z  WARN windsurf_api_client::remote_config: timed out"), Level::WARN);
+        assert_eq!(agent_stderr_level("2026-08-14T02:09:52.184873Z  ERROR some::target: it broke"), Level::ERROR);
+        assert_eq!(agent_stderr_level("2026-08-14T02:53:19.419549Z  DEBUG plugin_host: close"), Level::DEBUG);
+        assert_eq!(agent_stderr_level("2026-08-14T02:53:19.419549Z  TRACE deep: trace"), Level::TRACE);
+    }
+
+    #[test]
+    fn agent_stderr_level_defaults_unrecognized_to_warn() {
+        // A panic backtrace line carries no level token — surface it, never drop.
+        assert_eq!(agent_stderr_level("thread 'main' panicked at 'src/main.rs:42:1'"), Level::WARN);
+        assert_eq!(agent_stderr_level("note: run with `RUST_BACKTRACE=1` to display a backtrace"), Level::WARN);
+    }
 
     #[test]
     fn picks_allow_always_over_other_options() {
