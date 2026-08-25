@@ -373,7 +373,9 @@ mod tests {
             exec: ExecSecretsConfig { timeout_seconds: 5 },
             refs: HashMap::new(),
         };
-        let result = resolve_exec("test", "exec:///bin/false", &cfg).await;
+        // /usr/bin/false：macOS/Linux 皆有（/bin/false 是 Linux-only 路徑——
+        // macOS spawn 失敗走 OsError 分支，不會出現 "exited with"）
+        let result = resolve_exec("test", "exec:///usr/bin/false", &cfg).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("exited with"));
     }
