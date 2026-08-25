@@ -55,17 +55,20 @@ auth)
   for p in $PROFILES; do
     D=~/.omp/profiles/$p/agent
     cp "$MAIN/.env" "$D/.env" && chmod 600 "$D/.env"
-    # 先停該 bot 正在跑的 omp session（若有），避免 db 鎖
-    LAUNCHED=""
-    if launchctl list 2>/dev/null | grep -q "com.openab.$p"; then
-      launchctl kickstart -k gui/$(id -u)/com.openab.$p && LAUNCHED=" (+bot restarted)"
-    fi
+    # 單一交易原子替換 auth_*；busy_timeout 等短暫鎖，DELETE 後失敗也不會留下空表
     sqlite3 "$D/agent.db" <<SQL
 PRAGMA busy_timeout=5000;
 ATTACH '$MAIN/agent.db' AS src;
+BEGIN IMMEDIATE;
 $(for t in $TABLES; do echo "DELETE FROM $t; INSERT INTO $t SELECT * FROM src.$t;"; done)
+COMMIT;
 DETACH src;
 SQL
+    # 同步完成後才重啟，新憑證才會被載入（精確比對 label，避免前綴誤導）
+    LAUNCHED=""
+    if launchctl list 2>/dev/null | awk -v l="com.openab.$p" '$NF==l {f=1} END{exit !f}'; then
+      launchctl kickstart -k "gui/$(id -u)/com.openab.$p" && LAUNCHED=" (+bot restarted)"
+    fi
     echo "$p: auth synced ($(authcount $D/agent.db) rows)$LAUNCHED"
   done
   ;;
