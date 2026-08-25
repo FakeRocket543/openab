@@ -1577,9 +1577,10 @@ impl Handler {
         category: &str,
         page: usize,
     ) -> Option<CreateSelectMenu> {
-        let opt = options
-            .iter()
-            .find(|o| o.category.as_deref() == Some(category))?;
+        let opt = options.iter().find(|o| {
+            o.category.as_deref() == Some(category)
+                || (category == "mode" && o.category.as_deref() == Some("agent"))
+        })?;
 
         // Put current selection first so it always lands on page 0,
         // then fill remaining slots in original order.
@@ -1673,9 +1674,10 @@ impl Handler {
         category: &str,
         page: Option<usize>,
     ) -> Option<Vec<CreateActionRow>> {
-        let opt = options
-            .iter()
-            .find(|o| o.category.as_deref() == Some(category))?;
+        let opt = options.iter().find(|o| {
+            o.category.as_deref() == Some(category)
+                || (category == "mode" && o.category.as_deref() == Some("agent"))
+        })?;
         let total_pages = opt.options.len().div_ceil(SELECT_MENU_PAGE_SIZE);
         let page = match page {
             Some(p) => p.min(total_pages.saturating_sub(1)),
