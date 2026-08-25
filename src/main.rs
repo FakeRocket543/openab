@@ -505,6 +505,11 @@ async fn main() -> anyhow::Result<()> {
     let unified_platform_enabled = has_unified_platform(&cfg);
 
     let shutdown_hook = cfg.hooks.pre_shutdown.clone();
+    // Recompute the coordination-lock spec from the post-secret-substitution
+    // config: a coordination_lock path containing secret references must
+    // interlock with the janitor on the SAME resolved path for backup as it
+    // did for restore (pre_seed necessarily resolves pre-substitution).
+    let shutdown_coord_spec = openab_core::coord_lock::CoordLockSpec::resolve(&cfg.hooks);
 
     // Shared MCP-over-ACP tunnel registry (D6-a'): the gateway populates it per session; the
     // core's `acp_mcp` module reads it through the `RootAcpTunnel` implementation below.
@@ -1817,7 +1822,7 @@ async fn main() -> anyhow::Result<()> {
         // janitor sidecar must not checkpoint/VACUUM sessions.db while $HOME
         // is being tarred. On timeout, skip the hook rather than race —
         // the missing backup is visible in logs, a torn one is not.
-        let guarded = match &coord_spec {
+        let guarded = match &shutdown_coord_spec {
             Some(spec) => openab_core::coord_lock::acquire(spec).await,
             None => Ok(openab_core::coord_lock::CoordLockGuard::noop()),
         };
