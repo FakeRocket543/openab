@@ -79,8 +79,9 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
    - k3d 需在對應 pod 的 PVC 路徑上執行。
 
 2. **測試結果備註**
-   - `cargo test -p openab-core` 有一筆既有的 `secrets::tests::resolve_exec_nonzero_exit` 在 macOS 上失敗，與本次修改無關。
-   - Windows 跨平台檢查因本機缺少 `x86_64-w64-mingw32-gcc` 而無法執行。
+   - `resolve_exec_nonzero_exit`：已修（`42f55609` 改用 `/usr/bin/false`），`cargo test -p openab-core resolve_exec` 6 passed。
+   - Workspace clippy `-D warnings`：已透過 `m4z/openab-mcp-clippy` 修復（`7f7af411`），`cargo clippy --workspace -- -D warnings` OK。
+   - Windows 跨平台檢查仍因本機缺少 `x86_64-w64-mingw32-gcc` 而無法執行。
 
 3. **k3d image 的長期維護**
    - 本次是手動把編好的 `openab` binary patch 進既有 `openab-kiro:trixie` image。
@@ -88,4 +89,8 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 ## 2026-08-24 09:56 UTC 狀態更新
 
 - `feat/janitor-hook-coordination` 已併入 OpenAB `main` @ `e813a8e4`：Janitor↔hooks 互鎖實作、M4-Review 修復、文件補充已推上 `forgejo`。
+## 2026-08-25 04:28 UTC 狀態更新
+
+- `m4z/openab-mcp-clippy` 已併入 OpenAB `main` @ `aa7bef7f`：修復 `openab-mcp` `-D warnings` 並解決 macOS `resolve_exec_nonzero_exit`；workspace clippy 全綠。
+- `m4z/openab-mcp-clippy` 分支已刪除。
 - `fix/shell-v1.1-r1` 已併入 cuta `main` @ `e37e2d8`：R1 W1/N1/N2/N3 修復完成，審查報告存於 `docs/reviews/m5-shell-v1.1-r2-review.md`。
