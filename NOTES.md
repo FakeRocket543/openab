@@ -105,3 +105,7 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 
 - `feat/shell-timeline` 已併入 cuta `main` @ `dc5f4b4`：影片預覽 + 層時間軸 + 播放頭游標 + NLE 多軌檢視（視覺建議 #2）；pytest 242 passed、npm build ✅、clippy ✅
 - `feat/shell-timeline` 已併入 cuta `main` @ `4e75516`：時間軸縮放拉長（OpenCut pattern：px 佈局＋縮放捲動＋自適應刻度＋拖曳 scrub）、npm build 無 a11y warning、pytest 242 passed
+
+## 2026-08-25 07:15 UTC 狀態更新
+
+- `feat/timeline-at-mode` 已併入 cuta `main` @ `b800c4a`：A/T hotkeys＋Jobs detail 時間軸滾輪、播放控制／follow playhead／seekable chips；補 `@tauri-apps/cli` devDependency。pytest 242 passed、npm build ✅、clippy `-D warnings` ✅
