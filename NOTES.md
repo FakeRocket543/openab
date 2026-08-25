@@ -100,3 +100,5 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 - `forgejo/kiro-v3-auth` 已併入 OpenAB `main` @ `944d5500`：re-land kiro-cli v3 auth on openab-acp。
 - `fix-secrets-exec-test` 已刪除（`/bin/sh` 修復已被 `/usr/bin/false` 取代）。
 - `feat/card-style-pack` 已併入 cuta `main` @ `0b70a71`：新增 `press-noir` / `aurora-dusk` 字卡風格與 `scripts/style_sheet.py`。
+- `feat/shell-pushmode` 已併入 cuta `main` @ `d27972f`：Rust watcher emit `shell://mode`，nav 狀態燈 push/poll/unknown。
+- `feat/shell-timeline` 已併入 cuta `main` @ `d27972f`：Jobs detail 內嵌影片 + 層時間軸 scrubber + seek（視覺 #2）；M4-Review 補上 `videoSrc` state 與 `<track>` a11y。
