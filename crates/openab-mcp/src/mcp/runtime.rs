@@ -2668,6 +2668,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // 測試刻意持 ENV_LOCK 跨 await：序列化 env var 變更，防並行測試互踩
     async fn start_paste_login_builtin_without_env_var_errors_loud() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe {
