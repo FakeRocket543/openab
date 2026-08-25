@@ -25,6 +25,10 @@ const REGISTRATION_KEY: &str = "kirocli:odic:device-registration";
 /// dead. Reset to 0 on a successful refresh.
 static LAST_REFRESH_FAIL_MS: AtomicU64 = AtomicU64::new(0);
 const REFRESH_FAIL_COOLDOWN_MS: u64 = 30_000;
+/// Serializes the expire→refresh→save critical section across threads:
+/// AWS SSO rotates refresh tokens, so a double refresh would invalidate the
+/// first-issued grant and wedge the stored token into permanent re-login.
+static REFRESH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -203,11 +207,18 @@ fn refresh_token(token_data: &TokenData, reg: &Registration) -> Option<TokenData
 }
 
 fn save_token_data(conn: &rusqlite::Connection, token_data: &TokenData) {
-    if let Ok(json) = serde_json::to_string(token_data) {
-        let _ = conn.execute(
-            "UPDATE auth_kv SET value = ?1 WHERE key = ?2",
-            rusqlite::params![json, TOKEN_KEY],
-        );
+    match serde_json::to_string(token_data) {
+        Ok(json) => {
+            if let Err(e) = conn.execute(
+                "UPDATE auth_kv SET value = ?1 WHERE key = ?2",
+                rusqlite::params![json, TOKEN_KEY],
+            ) {
+                // A lost save means the next expiry re-runs the whole refresh;
+                // surface it instead of silently retry-storming later.
+                warn!("kiro token persist failed: {e}");
+            }
+        }
+        Err(e) => warn!("kiro token serialize failed: {e}"),
     }
 }
 
@@ -266,10 +277,24 @@ pub fn get_access_token() -> Option<KiroAuthResult> {
         rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .ok()?;
+    // kiro-cli writes this store too; wait briefly instead of failing on SQLITE_BUSY.
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(2));
 
     let mut token_data = read_token_data(&conn)?;
 
-    if is_expired(&token_data.expires_at) {
+    let mut expired = is_expired(&token_data.expires_at);
+    if expired {
+        // Serialize the refresh critical section; see REFRESH_LOCK doc.
+        let _refresh_guard = REFRESH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Double-check under the lock: another thread may have refreshed
+        // while we waited. If so, skip straight to the shared success tail.
+        if let Some(fresh) = read_token_data(&conn).filter(|t| !is_expired(&t.expires_at)) {
+            info!("kiro token already refreshed by a concurrent caller");
+            token_data = fresh;
+            expired = false;
+        }
+    }
+    if expired {
         // If a recent refresh attempt failed, skip the expensive OIDC HTTP
         // call and `kiro-cli whoami` subprocess for the cooldown window so a
         // dead token can't drive a retry storm.
@@ -311,13 +336,27 @@ pub fn get_access_token() -> Option<KiroAuthResult> {
                     )
                     .output();
                 // Re-read the refreshed token from sqlite
-                let conn2 = rusqlite::Connection::open_with_flags(
+                let conn2 = match rusqlite::Connection::open_with_flags(
                     &path,
                     rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
                         | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-                )
-                .ok()?;
-                token_data = read_token_data(&conn2)?;
+                ) {
+                    Ok(c) => {
+                        let _ = c.busy_timeout(std::time::Duration::from_secs(2));
+                        c
+                    }
+                    Err(_) => {
+                        LAST_REFRESH_FAIL_MS.store(now, Ordering::Relaxed);
+                        return None;
+                    }
+                };
+                token_data = match read_token_data(&conn2) {
+                    Some(t) => t,
+                    None => {
+                        LAST_REFRESH_FAIL_MS.store(now, Ordering::Relaxed);
+                        return None;
+                    }
+                };
                 if is_expired(&token_data.expires_at) {
                     LAST_REFRESH_FAIL_MS.store(now, Ordering::Relaxed);
                     error!("kiro-cli whoami fallback also failed");
