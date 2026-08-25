@@ -101,4 +101,6 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 - `fix-secrets-exec-test` 已刪除（`/bin/sh` 修復已被 `/usr/bin/false` 取代）。
 - `feat/card-style-pack` 已併入 cuta `main` @ `0b70a71`：新增 `press-noir` / `aurora-dusk` 字卡風格與 `scripts/style_sheet.py`。
 - `feat/shell-pushmode` 已併入 cuta `main` @ `d27972f`：Rust watcher emit `shell://mode`，nav 狀態燈 push/poll/unknown。
-- `feat/shell-timeline` 已併入 cuta `main` @ `d27972f`：Jobs detail 內嵌影片 + 層時間軸 scrubber + seek（視覺 #2）；M4-Review 補上 `videoSrc` state 與 `<track>` a11y。
+## 2026-08-25 05:55 UTC 狀態更新
+
+- `feat/shell-timeline` 已併入 cuta `main` @ `dc5f4b4`：影片預覽 + 層時間軸 + 播放頭游標 + NLE 多軌檢視（視覺建議 #2）；pytest 242 passed、npm build ✅、clippy ✅
