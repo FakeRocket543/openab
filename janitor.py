@@ -73,6 +73,9 @@ def pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
         return True
+    except PermissionError:
+        # EPERM means the process exists but is owned by another user — alive.
+        return True
     except OSError:
         return False
 
@@ -114,6 +117,7 @@ def acquire_coord_lock(timeout=60):
     The agent can optionally flock this same file in shared mode before DB writes,
     which would cause us to wait here until it's done.
     """
+    os.makedirs(os.path.dirname(COORD_LOCK), exist_ok=True)
     lock_fd = os.open(COORD_LOCK, os.O_CREAT | os.O_RDWR, 0o600)
     deadline = time.time() + timeout
     while time.time() < deadline:

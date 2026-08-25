@@ -114,6 +114,11 @@ mod imp {
     }
 
     pub async fn acquire_impl(spec: &CoordLockSpec) -> anyhow::Result<CoordLockGuard> {
+        // Fresh stateless hosts may not have the DB directory yet; the lock
+        // must be acquirable before pre_seed extracts anything (docs/hooks.md).
+        if let Some(parent) = spec.path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let file = std::fs::OpenOptions::new()
             .create(true)
             .read(true)
@@ -171,7 +176,9 @@ mod imp {
         }
     }
 
-    pub async fn acquire_impl(_spec: &CoordLockSpec) -> anyhow::Result<CoordLockGuard> {}
+    pub async fn acquire_impl(_spec: &CoordLockSpec) -> anyhow::Result<CoordLockGuard> {
+        Ok(CoordLockGuard)
+    }
 }
 
 use imp::acquire_impl;
@@ -217,6 +224,15 @@ mod tests {
         assert!(err.to_string().contains("janitor"), "err: {err}");
     }
 
+    #[tokio::test]
+    async fn acquire_creates_missing_parent_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir.path().join("deep/nested/dir/.janitor.lock");
+        let g = acquire(&spec(&lock, 0))
+            .await
+            .expect("acquire must create missing parent directories");
+        drop(g);
+    }
     #[test]
     fn resolve_returns_none_without_hooks() {
         let hooks = crate::config::HooksConfig::default();

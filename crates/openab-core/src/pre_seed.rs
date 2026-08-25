@@ -211,7 +211,7 @@ fn strip_skipped(temp_dir: &Path, target: &Path, skip_paths: &[PathBuf]) {
             continue; // outside this layer's target — not our concern
         };
         let staged = temp_dir.join(rel);
-        if staged.exists() && std::fs::remove_file(&staged).is_ok() {
+        if std::fs::symlink_metadata(&staged).is_ok() && std::fs::remove_file(&staged).is_ok() {
             info!(path = %skip.display(), "hooks.pre_seed: skipping restore of lock file");
         }
     }
