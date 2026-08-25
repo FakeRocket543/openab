@@ -298,14 +298,16 @@ pub fn get_access_token() -> Option<KiroAuthResult> {
                 info!("OIDC refresh failed, falling back to kiro-cli whoami");
                 let profile_arn = read_profile_arn(&conn);
                 drop(conn);
+                // Repo rule: child processes never inherit the bot's environment
+                // (credentials). Rebuild the minimal baseline explicitly.
+                let home = std::env::var("HOME").unwrap_or_default();
                 let _ = std::process::Command::new("kiro-cli")
                     .arg("whoami")
+                    .env_clear()
+                    .env("HOME", &home)
                     .env(
                         "PATH",
-                        format!(
-                            "{}/.local/bin:/usr/local/bin:/usr/bin:/bin",
-                            std::env::var("HOME").unwrap_or_default()
-                        ),
+                        format!("{}/.local/bin:/usr/local/bin:/usr/bin:/bin", home),
                     )
                     .output();
                 // Re-read the refreshed token from sqlite
