@@ -114,9 +114,15 @@ omp 的角色體系:
 3. pagination whitelist 加入 `"thought_level"`;
 4. `docs/slash-commands.md` 指令表補列。
 
-驗證:`cargo check -p openab-core` 通過;`cargo test -p openab-core discord` 101 passed / 0 failed;omp 18.0.6 實測 `session/set_config_option(configId="thinking", value="low")` → 成功回傳且收到 `config_option_update`(thinking → low)。
+驗證:`cargo check -p openab-core` 通過;`cargo test -p openab-core discord` 全數通過(含新增 category-matching 測試:`thought_level` 命中、`mode`↔`agent` fallback、缺類別 → None);omp 18.0.6 實測 `session/set_config_option(configId="thinking", value="low")` → 成功回傳且收到 `config_option_update`(thinking → low)。
 
 部署提醒:此改動在 gateway binary,需走 C5 管線(cargo build → image → k3d import → rollout restart)才會生效;Discord 端 guild 指令註冊在 bot ready 時自動更新。
+
+審查補記(2026-08-26 self-review):
+
+- `thought_level` 是 ACP 官方 schema 的一級 category(`acp_schema.rs` 枚舉:`mode`/`model`/`model_config`/`thought_level`/`other`)—— 本改動對齊規格,非 omp 專屬 hack;`model_config` 是下一個候補,等有 agent 公告再放行。
+- `connection.rs` 的既有 fallback:agent 拒絕 `set_config_option` 時,openab 會把 `/thinking <value>` 當 prompt 文字送出並本地改 `current_value`。對 omp 不觸發(實測協議路徑成功);對假想的「公告 thought_level 但不支援該方法」的 agent,該文字會落入 prompt —— 與 `/model` fallback 同型,不改。
+- kiro 等僅 `models`/`modes` fallback 的 backend:configOptions 無 `thought_level` → `/thinking` 顯示既有的「No thinking level options available」ephemeral 訊息,與 `/agents` 對不支援 agent 的行為一致。
 
 ### 不建議做
 

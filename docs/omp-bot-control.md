@@ -26,6 +26,7 @@ Discord ──WS── openab gateway(容器 PID1,Rust fork)
 |---|---|---|---|
 | `/models` | 換本 session 的模型(選單分頁) | 臨時要更強/更便宜模型 | 不跨 `/reset`;catalog 含整個 omp 內建 + models.yml,很長 |
 | `/agents` | 換 agent mode:**Default / Plan** | 見下方 Plan 模式 | fork `ae21db4` 才通(category `agent`→`mode`) |
+| `/thinking` | 換本 session 的 thinking level(Off/Auto/low/high/max) | 難題拉高、日常拉低省 token | fork `6b6ca7e8` 起;僅對公告 `thought_level` 的 backend 有效(omp 18.x+) |
 | `/cancel` | 中止進行中的 turn | 回應卡住、方向錯了 | buffer 裡的後續訊息仍會處理 |
 | `/cancel-all` | 中止 + 清空待處理 buffer | 連環誤發、洗版 | |
 | `/reset` | 銷毀 session 重開 | context 污染、換主題 | 對話記憶與模型選擇一併消失 |
@@ -33,7 +34,7 @@ Discord ──WS── openab gateway(容器 PID1,Rust fork)
 | `/export-thread` | 匯出對話 | 存檔、跨工具分享 | |
 | `/auth` `/usage` | 認證/用量 | — | 走 kiro 專屬通道(`_kiro.dev/commands/execute`),**omp bot 無效** |
 
-機制:`/models`、`/agents` 都是讀 agent 在 `session/new` 公告的 `configOptions`,篩 category 後建選單,選擇經 `session/set_config_option` 下發。omp 17.3.x 只公告 `mode` 與 `model` 兩類 —— **沒有角色、沒有 thinking**,所以 Discord 端能做到的就是這兩個。
+機制:`/models`、`/agents`、`/thinking` 都是讀 agent 在 `session/new` 公告的 `configOptions`,篩 category 後建選單,選擇經 `session/set_config_option` 下發。omp 17.3.x 只公告 `mode` 與 `model`;18.x 起多公告 `thought_level`(fork `6b6ca7e8` 起 Discord 有 `/thinking` 選單)—— 角色(modelRoles)仍不公告,維持部署端釘選。
 
 ### Plan 模式(何時用)
 
@@ -119,7 +120,7 @@ ConfigMap `openab-pi-z-models` → 掛 `/home/agent/.omp/agent/models.yml`(現�
 |---|---|
 | 這題想換更強/更省的模型 | `/models` |
 | 先規劃再動工(大綱、研究) | `/agents` → Plan,完稿切回 Default |
-| 單一問題要深思 | 訊息加 `ultrathink` |
+| 單一問題要深思 | 訊息加 `ultrathink`;整段期間都要高 effort 則用 `/thinking` 拉高 |
 | 大範圍平行調查/重構 | `orchestrate`;要可重複流程用 `workflowz` |
 | 指定工作目錄 | 首訊息 `[[ws:@alias]]` |
 | bot 回應卡死 | `/cancel`;誤發洗版 `/cancel-all` |
