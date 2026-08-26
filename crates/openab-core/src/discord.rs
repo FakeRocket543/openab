@@ -3400,6 +3400,74 @@ mod tests {
         assert!(out.ends_with('…'));
     }
 
+    // --- config select menu category matching (/models, /agents, /thinking) ---
+
+    fn test_config_option(
+        id: &str,
+        category: Option<&str>,
+        values: &[&str],
+        current: &str,
+    ) -> ConfigOption {
+        ConfigOption {
+            id: id.to_string(),
+            name: id.to_string(),
+            description: None,
+            category: category.map(str::to_string),
+            option_type: "select".to_string(),
+            current_value: current.to_string(),
+            options: values
+                .iter()
+                .map(|v| crate::acp::protocol::ConfigOptionValue {
+                    value: v.to_string(),
+                    name: v.to_string(),
+                    description: None,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn config_menu_matches_thought_level_category() {
+        // omp 18.x advertises thinking under category "thought_level".
+        let opts = vec![test_config_option(
+            "thinking",
+            Some("thought_level"),
+            &["off", "auto", "low", "high", "max"],
+            "max",
+        )];
+        let rows = Handler::build_config_components(&opts, "thought_level", None)
+            .expect("thought_level category must build a menu");
+        // Builder fields are private; round-trip through serde to pin the
+        // wire shape the interaction handlers rely on: custom_id prefix
+        // (parsed by handle_config_select) and current-value-first ordering
+        // with the default flag (so it lands on page 0).
+        let menu = match &rows[0] {
+            CreateActionRow::SelectMenu(m) => serde_json::to_value(m).unwrap(),
+            other => panic!("expected select menu row, got {other:?}"),
+        };
+        assert_eq!(menu["custom_id"], "acp_config_thinking");
+        assert_eq!(menu["options"][0]["label"], "max");
+        assert_eq!(menu["options"][0]["default"], true);
+    }
+
+    #[test]
+    fn config_menu_mode_matches_legacy_agent_category() {
+        // 42e01b77: /agents asks for "mode" but older agents advertise "agent".
+        let opts = vec![test_config_option(
+            "mode",
+            Some("agent"),
+            &["default", "plan"],
+            "default",
+        )];
+        assert!(Handler::build_config_components(&opts, "mode", None).is_some());
+    }
+
+    #[test]
+    fn config_menu_missing_category_is_none() {
+        let opts = vec![test_config_option("model", Some("model"), &["m1"], "m1")];
+        assert!(Handler::build_config_components(&opts, "thought_level", None).is_none());
+    }
+
     // --- format_usage_report tests (/usage slash command) ---
 
     fn usage_breakdown() -> crate::acp::protocol::UsageBreakdown {
