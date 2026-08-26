@@ -8,6 +8,7 @@ OpenAB registers Discord slash commands for session control and agent management
 |---------|-------------|--------------------------|
 | `/models` | Select the AI model via dropdown menu | Yes |
 | `/agents` | Select the agent mode via dropdown menu | Yes |
+| `/thinking` | Select the thinking level via dropdown menu (agents advertising `thought_level`, e.g. omp 18.x) | Yes |
 | `/cancel` | Cancel the current in-flight operation | Yes |
 | `/reset` | Reset the conversation session (clear history, start fresh) | Yes |
 | `/auth` | Authenticate the backend agent via device flow (**DM-only**) | No |

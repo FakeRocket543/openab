@@ -1428,6 +1428,8 @@ impl EventHandler for Handler {
         let commands = vec![
             CreateCommand::new("models").description("Select the AI model for this session"),
             CreateCommand::new("agents").description("Select the agent mode for this session"),
+            CreateCommand::new("thinking")
+                .description("Select the thinking level for this session"),
             CreateCommand::new("cancel").description("Cancel the current operation"),
             CreateCommand::new("cancel-all")
                 .description("Cancel current operation and drop all buffered messages"),
@@ -1532,6 +1534,10 @@ impl EventHandler for Handler {
             }
             Interaction::Command(cmd) if cmd.data.name == "agents" => {
                 self.handle_config_command(&ctx, &cmd, "mode", "agent mode")
+                    .await;
+            }
+            Interaction::Command(cmd) if cmd.data.name == "thinking" => {
+                self.handle_config_command(&ctx, &cmd, "thought_level", "thinking level")
                     .await;
             }
             Interaction::Command(cmd) if cmd.data.name == "cancel" => {
@@ -2609,7 +2615,7 @@ impl Handler {
         };
 
         // Only allow known config categories.
-        if !matches!(category, "model" | "agent" | "mode") {
+        if !matches!(category, "model" | "agent" | "mode" | "thought_level") {
             return;
         }
 
