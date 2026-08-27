@@ -1,12 +1,12 @@
 #!/bin/bash
 # sync-omp-profiles.sh — 同步主樹 ~/.omp/agent 的憑證到各 bot profile
 # 用法: sync-omp-profiles.sh {models|auth|mcp|all|status}
-#   models — 輪替 coding key 後：主樹 models.yml → 4 profiles
-#   auth   — devin re-auth 後：.env + agent.db auth_* 表 → 4 profiles（不動 profile 自身 sessions）
-#   mcp    — gbrain token 換新後：主樹 mcp.json → 4 profiles
+#   models — 輪替 coding key 後：主樹 models.yml → 5 profiles
+#   auth   — devin re-auth 後：.env + agent.db auth_* 表 → 5 profiles（不動 profile 自身 sessions）
+#   mcp    — gbrain token 換新後：主樹 mcp.json → 5 profiles
 #   status — 只顯示各處指紋/計數，不改任何東西
 set -eu
-PROFILES="m4-z m4-free m4-review m4-piswe"
+PROFILES="m4-z m4-free m4-review m4-piswe m4-design"
 MAIN=~/.omp/agent
 cd "$(dirname "$0")"
 
