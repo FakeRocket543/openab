@@ -122,3 +122,7 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 ## 2026-08-28 (三) 狀態更新
 
 - sys101 k3d 同步:lcn-chimera-vite heavy.md 掛 `advisor: true`(OAB-K3D `c602030`,經 configmap patch + rollout);lcn-chimera 無 heavy 不變。**重要實證**:pod 端 `zai/glm-5.3-flash` (anthropic 端點) 運行時可收圖 (`omp -p @img` 實測),vision 維持 flash——與本地 `zai-coding` (coding 端點) flash 宣告 image 但運行拒收相反;本地 muse-spark 修正仍必要且已驗證。詳 `doc/20260828-omp-vision-advisor-fixes.md` §9。
+
+## 2026-08-28 (四) 狀態更新
+
+- 新增 `doc/20260828-chimera-plan-mode-lifecycle.md`:chimera 合體 (plan-yolo) 設計記錄——形態 2 (`--plan max --plan-yolo --plan-yolo-into flash:high`) **零 code 可上線** (只改 OAB-K3D configmap args);openab-fork 配合修改分三級:Tier 1 = Discord `/model` 指令 (仿既有 set_config_option 管線) + mode 狀態顯示;Tier 2 = ACP elicitation handler (connection.rs 仿 request_permission) 解鎖互動 plan 核准 + `session/set_mode` 解鎖同 session 重規劃。實證:openab-acp 僅處理 request_permission,無 elicitation/set_mode → 無人值守必須 yolo。待決策:Tier 0 上 vite 與否。
