@@ -138,3 +138,7 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 ## 2026-08-28 (七) 狀態更新
 
 - k3d fleet 紀律統一 (12 bots,OAB-K3D 值此 commit):①Anti-Loop 四條補齊 ecri-devin/lcn-muse/lcn-review/mecrivain;②Modes (Direct/Ralph/Interview) 補齊 8 隻 (mecrivain 保留其 MECRIVAIN_MODE 變體僅補 anti-loop);③chimera=重裝深度 (max, max_sessions 10→3) / vite=速度優先 (args 回 A1 flash:high 直答,深度靠 @heavy/關鍵字/@chimera),雙方 Identity 加定位行 (供人類路由,不含自動呼叫);④複審 12/12 一致,自動呼叫語句掃描 0;⑤Discord mentions-only 原本就 12/12。分工原則:使用者自行呼叫,bot 嚴守不搶答 (mentions-only + anti-loop)。
+
+## 2026-08-28 (八) 狀態更新
+
+- 本機追上 k3d 標準 (兩件):①m4-* bots 紀律統一——11 檔補齊 (m4-chimera/AGENTS + m4-review ×3 = anti-loop+Modes;m4-design ×3、m4-free ×3、m4-devin-swe/AGENTS = 補 Modes),複審 15/15 檔 anti+modes 全 ✓ (m4-z/m4-piswe 原有);openab-bots 工作區維持 untracked (含憑證不入版控)。②主樹 `~/.omp/agent` 加 `slow` role (zai-coding/glm-5.3:max) + `agents/heavy.md` (@slow/blocking/advisor:true)——`omp -p` 實測 task 派遣 heavy 成功回應。分工對照:m4-z ≈ k3d chimera (max)、m4-chimera ≈ k3d vite (flash+heavy),結構早已同構。
