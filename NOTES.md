@@ -110,3 +110,7 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 
 - `feat/timeline-at-mode` 已併入 cuta `main` @ `b800c4a`：A/T hotkeys＋Jobs detail 時間軸滾輪、播放控制／follow playhead／seekable chips；補 `@tauri-apps/cli` devDependency。pytest 242 passed、npm build ✅、clippy `-D warnings` ✅
 - `feat(formats)` 已併入 cuta `main` @ `1be9942`：輸出格式放寬——直式/橫式 × FHD/4K/social（5 內建 profile＋自訂 WxH@fps），manifest `format` 欄位驅動，無欄位時向後相容 fhd-vertical。pytest 256 passed；eversupp `video-fhd` 專案實跑 voice stage，base.mp4 實測 1920×1080@30。
+
+## 2026-08-28 狀態更新
+
+- 新增 `doc/20260828-central-skills-hooks-delegation.md`:對照官方水母概念圖盤點「中央技能供應 / hooks / 自動 delegation」的需求與現況。要點:①官方 hooks (pre_seed/pre_boot/configUrl) 本 fleet **零使用**,供應全靠 image 燒錄 (C5) + `sync-omp-profiles.sh` + `kubectl cp`;②`crates/openab-cp` delegation 協定 upstream 已實作但 ADR 仍 Proposed、無 `spawn_agent` LLM 工具,k3d 未部署——bot 間維持人類閘門 Discord handoff;③候選行動 P1=m4-free 試點 pre_seed (R2 bundle),**未批准未開工**。
