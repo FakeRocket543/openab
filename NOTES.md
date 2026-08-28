@@ -118,3 +118,7 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 ## 2026-08-28 (二) 狀態更新
 
 - 執行 omp fleet 三項修正並出自驗報告 `doc/20260828-omp-vision-advisor-fixes.md`:①vision role 改 `opencode-go/muse-spark-1.2-contributor`(主樹+m4-chimera+m4-free;glm-5.3 不收影像)②m4-chimera `heavy.md` 加 `advisor: true`(heavy 派工改由 Devin advisor 監審)③`.env` 權限查證後全 600 免改。subagent 審查抓到回歸:m4-free `enabledModels` 白名單缺 muse-spark → 已補並重驗(`--profile m4-free` 冒煙 OK)。omp 配置不在版控,repo 僅收報告。
+
+## 2026-08-28 (三) 狀態更新
+
+- sys101 k3d 同步:lcn-chimera-vite heavy.md 掛 `advisor: true`(OAB-K3D `c602030`,經 configmap patch + rollout);lcn-chimera 無 heavy 不變。**重要實證**:pod 端 `zai/glm-5.3-flash` (anthropic 端點) 運行時可收圖 (`omp -p @img` 實測),vision 維持 flash——與本地 `zai-coding` (coding 端點) flash 宣告 image 但運行拒收相反;本地 muse-spark 修正仍必要且已驗證。詳 `doc/20260828-omp-vision-advisor-fixes.md` §9。

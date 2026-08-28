@@ -66,3 +66,27 @@ YAML 全部可解析、無舊值殘留、模型可解析(含白名單)、headles
 
 ---
 *Generated with omp main loop (GLM-5.3) / scout subagent review / Fable + Ralph mode.*
+
+---
+
+## 9. 補記:sys101 k3d 同步 (同日)
+
+**目標**:lcn-chimera / lcn-chimera-vite 兩 pod 同步本輪修改。
+
+**發現 (推翻部分原假設)**:
+
+1. Pod 內 omp 配置 (config.yml/models.yml/heavy.md) 為 **ConfigMap 唯讀掛載** (`openab-lcn-chimera-omp` / `openab-lcn-chimera-vite-omp`),唯讀、sed/cp 直改皆失敗——必須改 OAB-K3D 來源 manifest → `kubectl apply` → rollout restart。
+2. **Pod 的 vision 維持 `zai/glm-5.3-flash` 不變是對的**:pod 的 `zai` provider 走 anthropic 端點,flash 宣告且**實測運行可收圖**(`omp -p @/tmp/tv.jpg` 於 pod 兔回答正確)。本地的 `zai-coding` (coding/paas 端點) flash 宣告 image 但運行時拒收——**同一模型名、不同端點、行為不同**,本地 musp-spark 修正仍為必要 (修正後 inspect_image 實測成功)。8/27 團隊把 vision2 從 muse-spark 改回 flash 的決策在 pod 端成立。
+3. `@vision2` fallback selector 在 pod 端 omp 曾報格式錯誤 (8/27 文件 §9),故 pod 端 chain 維持 literal,不跟本地對齊。
+
+**已執行**:
+
+| 項目 | 內容 |
+|---|---|
+| lcn-chimera-vite | `heavy.md` 加 `advisor: true`(OAB-K3D `k8s/live/openab-lcn-chimera-vite-omp-configmap.yaml` JSON patch → apply → rollout restart);新 pod `openab-lcn-chimera-vite-57f754cbbb-4rl4s` Running,L7 `advisor: true` 確認 |
+| lcn-chimera | 無 heavy agent,無需變更 |
+| vision/vision2 (兩 pod) | **不變** (flash 實測可收圖) |
+| OAB-K3D commit | `c602030` (sys101,僅該 configmap 檔;`secrets/ssh.yaml.age` 原有未提交變更保持不動) |
+| 清理 | 測試圖 `/tmp/tv.jpg` (本機/sys101/pod) 已刪;pod 內暫存 config 副本已清 |
+
+**驗證**:rollout status 成功、新 pod 1/1 Running、heavy.md/config.yml grep 逐行確認、pod 內影像 e2e 實測通過。
