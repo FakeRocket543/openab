@@ -114,3 +114,7 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 ## 2026-08-28 狀態更新
 
 - 新增 `doc/20260828-central-skills-hooks-delegation.md`:對照官方水母概念圖盤點「中央技能供應 / hooks / 自動 delegation」的需求與現況。要點:①官方 hooks (pre_seed/pre_boot/configUrl) 本 fleet **零使用**,供應全靠 image 燒錄 (C5) + `sync-omp-profiles.sh` + `kubectl cp`;②`crates/openab-cp` delegation 協定 upstream 已實作但 ADR 仍 Proposed、無 `spawn_agent` LLM 工具,k3d 未部署——bot 間維持人類閘門 Discord handoff;③候選行動 P1=m4-free 試點 pre_seed (R2 bundle),**未批准未開工**。
+
+## 2026-08-28 (二) 狀態更新
+
+- 執行 omp fleet 三項修正並出自驗報告 `doc/20260828-omp-vision-advisor-fixes.md`:①vision role 改 `opencode-go/muse-spark-1.2-contributor`(主樹+m4-chimera+m4-free;glm-5.3 不收影像)②m4-chimera `heavy.md` 加 `advisor: true`(heavy 派工改由 Devin advisor 監審)③`.env` 權限查證後全 600 免改。subagent 審查抓到回歸:m4-free `enabledModels` 白名單缺 muse-spark → 已補並重驗(`--profile m4-free` 冒煙 OK)。omp 配置不在版控,repo 僅收報告。
