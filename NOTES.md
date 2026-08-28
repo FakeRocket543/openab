@@ -126,3 +126,7 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 ## 2026-08-28 (四) 狀態更新
 
 - 新增 `doc/20260828-chimera-plan-mode-lifecycle.md`:chimera 合體 (plan-yolo) 設計記錄——形態 2 (`--plan max --plan-yolo --plan-yolo-into flash:high`) **零 code 可上線** (只改 OAB-K3D configmap args);openab-fork 配合修改分三級:Tier 1 = Discord `/model` 指令 (仿既有 set_config_option 管線) + mode 狀態顯示;Tier 2 = ACP elicitation handler (connection.rs 仿 request_permission) 解鎖互動 plan 核准 + `session/set_mode` 解鎖同 session 重規劃。實證:openab-acp 僅處理 request_permission,無 elicitation/set_mode → 無人值守必須 yolo。待決策:Tier 0 上 vite 與否。
+
+## 2026-08-28 (五) 狀態更新
+
+- Tier 2 收官 (doc/20260828-tier2-implementation-report.md):**零 code 落地**。①`/models` `/agents` 上游已存在 (69118f3c,部署版已含);②elicitation.form 能力宣告實測使 omp ACP prompt 停擺 → 2.1 拒用,plan 核准 ACP headless 自動通過即正解;③`--plan` 旗標 ACP 下不換模型 (session jsonl per-turn 實證);④A2 引擎=`--plan-yolo-into`,已部署 vite (OAB-K3D 474ef51,pod e2e: max 規劃×3→flash 實作×8→pp.txt 建立)。lifecycle 文件已加 §7 修正。

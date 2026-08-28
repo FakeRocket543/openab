@@ -92,3 +92,13 @@ Discord @bot → openab session (channel/thread 為單位,TTL 回收)
 
 ---
 *設計討論記錄:omp main loop (GLM-5.3) + advisor;證據:omp cli-reference/prewalk/resolve-tool-runtime/advisor-watchdog 文件、openab-acp connection.rs 實測 grep。*
+
+---
+
+## 7. 實作結果修正 (2026-08-28 同日晚,詳見 doc/20260828-tier2-implementation-report.md)
+
+原 §3 分級經實測大幅修正:
+- **2.2 已存在**:`/models`、`/agents` 指令上游 `69118f3c` 即有,部署版 binary 已含;mode 切換走 omp 公告的 `mode` config 選項 (default/plan),零新 RPC。
+- **2.1 拒用**:宣告 `elicitation.form` 能力會使 omp ACP prompt 停擺 (probe ×2 重現);ACP headless 的 plan 核准本就自動通過——即最佳 fallback。
+- **`--plan` 旗標在 ACP 無效** (兩路徑實證);A2 切換引擎 = `--plan-yolo-into`。
+- **A2 已部署 vite 並 pod e2e 驗證**:max 規劃 ×3 → 自動切 flash 實作 ×8。OAB-K3D `474ef51`。
