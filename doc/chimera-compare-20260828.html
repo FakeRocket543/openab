@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chimera × Chimera-Vite 對照 — k3d openab fleet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f7f6f3;--ink:#1c1e26;--muted:#6b6f7e;--line:#d8d6d0;
+    --card:#ffffff;--accent:#eb6c36;--accent-bg:#fff6ef;
+    --mono:'Geist Mono','SF Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);
+    font-family:'Geist','PingFang TC','Noto Sans TC',-apple-system,sans-serif;
+    line-height:1.55;padding:48px 24px;max-width:1080px;margin:0 auto}
+  h1{font-size:30px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px;margin:6px 0 20px}
+  h2{font-size:17px;font-weight:700;letter-spacing:.08em;margin:36px 0 12px;
+     border-bottom:1px solid var(--line);padding-bottom:8px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.cards{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+  .card h3{font-size:20px;font-weight:700}
+  .tagline{color:var(--muted);font-size:13px;margin:2px 0 10px}
+  .model{font-family:var(--mono);font-size:13.5px;font-weight:500}
+  .args{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
+  .card hr{border:0;border-top:1px solid var(--line);margin:12px 0}
+  .kv{display:flex;gap:8px;font-size:13.5px;margin:4px 0}
+  .kv b{min-width:96px;font-weight:600}
+  .kv span{color:var(--muted)}
+  table{width:100%;border-collapse:collapse;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:13.5px}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#efeee9;font-size:12px;letter-spacing:.06em;color:var(--muted);font-weight:600}
+  tr:last-child td{border-bottom:0}
+  td.mono,th.mono{font-family:var(--mono);font-size:12.5px}
+  td.role{font-weight:600;white-space:nowrap}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:var(--card);border:1px solid var(--line);border-radius:999px;
+    padding:5px 14px;font-size:13px;font-weight:600}
+  .kcards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  @media(max-width:760px){.kcards{grid-template-columns:1fr}}
+  .kcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .kcard b{color:var(--accent);font-family:var(--mono)}
+  .kcard.mode b{color:var(--ink)}
+  .kcard p{font-size:13px;color:var(--muted);margin-top:4px}
+  .path{display:grid;grid-template-columns:1fr 28px 1fr 28px 1fr;align-items:center;gap:4px}
+  @media(max-width:760px){.path{grid-template-columns:1fr}.path .arrow{transform:rotate(90deg);justify-self:center}}
+  .node{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center}
+  .node b{font-size:14px}
+  .node p{font-size:12.5px;color:var(--muted);margin-top:4px}
+  .node.focal{background:var(--accent-bg);border-color:var(--accent)}
+  .node.focal b{color:var(--accent)}
+  .arrow{color:var(--accent);font-size:18px;text-align:center;font-weight:700}
+  .note{font-size:12.5px;color:var(--muted);margin-top:10px}
+  ol.rules{padding-left:22px;font-size:13.5px;color:var(--muted)}
+  ol.rules li{margin:5px 0}
+  ol.rules b{color:var(--ink)}
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .badge{display:inline-block;font-family:var(--mono);font-size:11px;background:#efeee9;
+    border-radius:6px;padding:2px 8px;margin-left:8px;color:var(--muted);vertical-align:middle}
+</style>
+</head>
+<body>
+
+<h1>Chimera × Chimera-Vite <span class="badge">k3d · sys101</span></h1>
+<p class="sub">模型角色 / 指令 / 分工對照 · 2026-08-28 · 海報版:<a href="chimera-compare-20260828.svg">chimera-compare-20260828.svg</a></p>
+
+<h2>角色定位</h2>
+<div class="cards">
+  <div class="card">
+    <h3>lcn-chimera</h3>
+    <div class="tagline">重裝深度 — 架構討論 · 高風險決策 · 長會談</div>
+    <div class="model">主模型 zai/glm-5.3 : max</div>
+    <div class="args">args: ["acp","--model","zai/glm-5.3","--thinking","max"]</div>
+    <hr>
+    <div class="kv"><b>並發</b><span>max_sessions = 3 (少而深)</span></div>
+    <div class="kv"><b>速度/成本</b><span>慢 · 貴 (全程 max thinking)</span></div>
+    <div class="kv"><b>深度</b><span>自己就是重腦,不外包</span></div>
+    <div class="kv"><b>規劃</b><span>/agents → Plan (max 規劃 max 執行)</span></div>
+    <div class="kv"><b>口頭禪</b><span>「跟我一起把這件事想透」</span></div>
+  </div>
+  <div class="card">
+    <h3>lcn-chimera-vite</h3>
+    <div class="tagline">速度優先 — 日常任務 · 快速迭代 · 分流</div>
+    <div class="model">主模型 zai/glm-5.3-flash : high</div>
+    <div class="args">args: ["acp","--model","zai/glm-5.3-flash","--thinking","high"]</div>
+    <hr>
+    <div class="kv"><b>並發</b><span>max_sessions = 10 (高流量)</span></div>
+    <div class="kv"><b>速度/成本</b><span>快 · 便宜 (95% flash)</span></div>
+    <div class="kv"><b>深度</b><span>@heavy subagent 按需升級 (glm-5.3:max)</span></div>
+    <div class="kv"><b>規劃</b><span>/agents → Plan (flash 規劃;要 max 先 /models 切換)</span></div>
+    <div class="kv"><b>口頭禪</b><span>「修這個、查這個、先看看多大」</span></div>
+  </div>
+</div>
+
+<h2>模型角色 ROLE → MODEL</h2>
+<table>
+  <tr><th>ROLE</th><th>CHIMERA</th><th>CHIMERA-VITE</th></tr>
+  <tr><td class="role">default 主迴圈</td><td class="mono">zai/glm-5.3:max</td><td class="mono">zai/glm-5.3-flash:high</td></tr>
+  <tr><td class="role">slow / @heavy 深度</td><td class="mono">— (本身即 max)</td><td class="mono">zai/glm-5.3:max · advisor:true</td></tr>
+  <tr><td class="role">task/smol/tiny workers</td><td class="mono">zai/glm-5.3-flash</td><td class="mono">zai/glm-5.3-flash</td></tr>
+  <tr><td class="role">vision / vision2 視覺</td><td class="mono">opencode-go/muse-spark-1.2-contributor</td><td class="mono">opencode-go/muse-spark-1.2-contributor</td></tr>
+  <tr><td class="role">designer 設計</td><td class="mono">zai/glm-5.3:max</td><td class="mono">zai/glm-5.3:max</td></tr>
+  <tr><td class="role">advisor 顧問</td><td class="mono">devin/swe-1-7:max (免費,旁觀每回合)</td><td class="mono">devin/swe-1-7:max (同)</td></tr>
+  <tr><td class="role">端點 models.yml</td><td class="mono">GLM Coding Plan — api.z.ai/api/coding/paas/v4</td><td class="mono">GLM Coding Plan (同 key 同定義)</td></tr>
+</table>
+
+<h2>完整比較</h2>
+<table>
+  <tr><th>維度</th><th>lcn-chimera</th><th>lcn-chimera-vite</th></tr>
+  <tr><td class="role">定位</td><td>重裝深度:架構 / 高風險 / 長會談</td><td>速度優先:日常 / 快速迭代 / 分流</td></tr>
+  <tr><td class="role">主模型</td><td class="mono">glm-5.3 max</td><td class="mono">glm-5.3-flash high</td></tr>
+  <tr><td class="role">A2 plan-yolo</td><td>無 (全 max 無意義)</td><td>已撤除 → A1 flash 直答 (速度主因)</td></tr>
+  <tr><td class="role">深度路徑</td><td>自己就是 max</td><td>@heavy (閉門一次性) · ultrathink · @chimera</td></tr>
+  <tr><td class="role">max_sessions</td><td>3</td><td>10</td></tr>
+  <tr><td class="role">反應速度</td><td>慢 (max thinking)</td><td>快</td></tr>
+  <tr><td class="role">單位成本</td><td>input 1.4 / output 4.4 (per 1M)</td><td>input 0.15 / output 0.5 (per 1M)</td></tr>
+  <tr><td class="role">heavy.md</td><td>無</td><td>有 — @slow 引用 · blocking · advisor</td></tr>
+  <tr><td class="role">orchestrate 時</td><td>max 指揮 flash 工人 (成本漂亮)</td><td>flash 指揮 flash (大編排建議去 chimera)</td></tr>
+  <tr><td class="role">advisor</td><td colspan="2">Devin SWE-1.7 · 免費 · 旁觀每回合 · concern 轉向 / blocker 擋下</td></tr>
+</table>
+
+<h2>DISCORD 指令 (兩隻相同)</h2>
+<div class="chips">
+  <span class="chip">/models</span><span class="chip">/agents</span><span class="chip">/thinking</span>
+  <span class="chip">/cancel</span><span class="chip">/cancel-all</span><span class="chip">/reset</span>
+  <span class="chip">/remind</span><span class="chip">/auth</span><span class="chip">/usage</span>
+  <span class="chip">/export-thread</span>
+</div>
+<p class="note">/models → 339 模型分頁選單 · /agents → Default ⇄ Plan (同 thread 重規劃) · /thinking → 5 檔深度 · /reset = 重開 session</p>
+
+<h2>MAGIC KEYWORDS (散文中全小寫獨立單字,該回生效)</h2>
+<div class="kcards">
+  <div class="kcard"><b>ultrathink</b><p>多步細審 notice;chimera 已 max 無感,vite 停在 high (要更深用 /thinking 或 @heavy)</p></div>
+  <div class="kcard"><b>orchestrate</b><p>拆解 → 平行派 flash 工人 → 逐段驗證直到完成</p></div>
+  <div class="kcard"><b>workflowz</b><p>eval kernel 確定性工作流 agent()/parallel()/pipeline() — 大調查 · 遷移 · 對抗式審查</p></div>
+</div>
+<p class="note">觸發規則:全小寫獨立單字;orchestrate, ✓ · Orchestrated · orchestrate() · 路徑內出現 ✗;程式碼區塊內不算</p>
+
+<h2>行為模式 (AGENTS.md 慣例,兩隻皆有)</h2>
+<div class="kcards">
+  <div class="kcard mode"><b>Direct</b><span class="note">(預設)</span><p>做完回報,一次來回 — 指令明確的日常任務</p></div>
+  <div class="kcard mode"><b>Ralph</b><p>「ralph mode / keep going / 持續做」— 循環驗證到全部子任務完成才停</p></div>
+  <div class="kcard mode"><b>Interview</b><p>「問我 / ask me」— 一次一問到需求清楚才執行 (僅對人類)</p></div>
+</div>
+
+<h2>深度升級路徑 — 人類自行呼叫</h2>
+<div class="path">
+  <div class="node"><b>flash 快答</b><p>@chimera-vite 主迴圈<br>日常任務 · 95% 流量</p></div>
+  <div class="arrow">→</div>
+  <div class="node"><b>@heavy 閉門深度</b><p>vite 內 subagent · glm-5.3:max<br>一次性 · 摘要進出 · 快派</p></div>
+  <div class="arrow">→</div>
+  <div class="node focal"><b>@chimera 對話式深度</b><p>fleet 共享重腦 · max 全程在場<br>可來回討論 · context 完整</p></div>
+</div>
+
+<h2>艦隊紀律 (12/12 bots 一致)</h2>
+<ol class="rules">
+  <li><b>mentions-only</b> — 沒被 @ 不搶答 (Discord 機械層)</li>
+  <li><b>Anti-Loop</b> — 不主動 @ 其他 bot;被委派 → 執行 → 回報一次 → 停;bot 回覆一律忽略</li>
+  <li><b>人類發起</b> — 委派只能由人類說「叫 @XXX 做」啟動;bot 零自動呼叫</li>
+  <li><b>受託紀律</b> — 收 bot 任務立即執行不反問,缺資訊自行假設並註記</li>
+</ol>
+
+<footer>
+  lcn-chimera · max_sessions=3 · 全 max 　|　 lcn-chimera-vite · max_sessions=10 · flash+heavy<br>
+  provider: zai = GLM Coding Plan · vision: muse-spark-1.2 · omp 18.0.5 · openab 0.10.0 · generated 2026-08-28
+</footer>
+
+</body>
+</html>
