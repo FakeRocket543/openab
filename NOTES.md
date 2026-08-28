@@ -130,3 +130,7 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 ## 2026-08-28 (五) 狀態更新
 
 - Tier 2 收官 (doc/20260828-tier2-implementation-report.md):**零 code 落地**。①`/models` `/agents` 上游已存在 (69118f3c,部署版已含);②elicitation.form 能力宣告實測使 omp ACP prompt 停擺 → 2.1 拒用,plan 核准 ACP headless 自動通過即正解;③`--plan` 旗標 ACP 下不換模型 (session jsonl per-turn 實證);④A2 引擎=`--plan-yolo-into`,已部署 vite (OAB-K3D 474ef51,pod e2e: max 規劃×3→flash 實作×8→pp.txt 建立)。lifecycle 文件已加 §7 修正。
+
+## 2026-08-28 (六) 狀態更新
+
+- k3d pods 模型端點統一:chimera/chimera-vite 的 `zai` provider 從 anthropic 端點 (按 token) 改為 **GLM Coding Plan** (`api.z.ai/api/coding/paas/v4`,與本機 zai-coding 同 key 同定義,provider 名保留故引用零改);flash 冒煙 OK。vision/vision2/fallback 同步改 muse-spark (coding 端點 flash 運行不收圖,上午實證)。chimera 兩 pod AGENTS.md 補 **Modes** 段 (Direct/Ralph/Interview,對齊 m4-z 條文);普查:本地 m4-z/m4-piswe 有、k3d Pi-Z 有 (中文變體)、MECRIVAIN 用 `MECRIVAIN_MODE=ralph` 環境變數、其餘 bot 無。OAB-K3D `5c94b94`;新 pod 6r5rt/2dttn 驗證 baseUrl/vision/Ralph/args 全數正確。
