@@ -134,3 +134,7 @@ Commit：`8ec006f fix(acp): recover from stale devin session locks`
 ## 2026-08-28 (六) 狀態更新
 
 - k3d pods 模型端點統一:chimera/chimera-vite 的 `zai` provider 從 anthropic 端點 (按 token) 改為 **GLM Coding Plan** (`api.z.ai/api/coding/paas/v4`,與本機 zai-coding 同 key 同定義,provider 名保留故引用零改);flash 冒煙 OK。vision/vision2/fallback 同步改 muse-spark (coding 端點 flash 運行不收圖,上午實證)。chimera 兩 pod AGENTS.md 補 **Modes** 段 (Direct/Ralph/Interview,對齊 m4-z 條文);普查:本地 m4-z/m4-piswe 有、k3d Pi-Z 有 (中文變體)、MECRIVAIN 用 `MECRIVAIN_MODE=ralph` 環境變數、其餘 bot 無。OAB-K3D `5c94b94`;新 pod 6r5rt/2dttn 驗證 baseUrl/vision/Ralph/args 全數正確。
+
+## 2026-08-28 (七) 狀態更新
+
+- k3d fleet 紀律統一 (12 bots,OAB-K3D 值此 commit):①Anti-Loop 四條補齊 ecri-devin/lcn-muse/lcn-review/mecrivain;②Modes (Direct/Ralph/Interview) 補齊 8 隻 (mecrivain 保留其 MECRIVAIN_MODE 變體僅補 anti-loop);③chimera=重裝深度 (max, max_sessions 10→3) / vite=速度優先 (args 回 A1 flash:high 直答,深度靠 @heavy/關鍵字/@chimera),雙方 Identity 加定位行 (供人類路由,不含自動呼叫);④複審 12/12 一致,自動呼叫語句掃描 0;⑤Discord mentions-only 原本就 12/12。分工原則:使用者自行呼叫,bot 嚴守不搶答 (mentions-only + anti-loop)。
